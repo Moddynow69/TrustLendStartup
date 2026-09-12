@@ -4,6 +4,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/form";
+import { LenderCombobox } from "@/components/ui/lender-combobox";
 import { Button } from "@/components/ui/button";
 import { useCreateLead } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,16 +69,14 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
           value={form.productType}
           onChange={(e) => update("productType", e.target.value)}
         />
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Loan amount (₹)"
-            type="number"
-            min="1"
-            value={form.amount}
-            onChange={(e) => update("amount", e.target.value)}
-          />
-          <Input label="Bank" value={form.bank} onChange={(e) => update("bank", e.target.value)} />
-        </div>
+        <Input
+          label="Loan amount (₹)"
+          type="number"
+          min="1"
+          value={form.amount}
+          onChange={(e) => update("amount", e.target.value)}
+        />
+        <LenderCombobox value={form.bank} onChange={(v) => update("bank", v)} />
         <Select
           label="Case type"
           value={form.caseType}

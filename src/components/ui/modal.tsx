@@ -28,7 +28,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-card"
+        className="relative w-full max-w-lg overflow-visible rounded-xl bg-white p-6 shadow-card"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-ink-900">{title}</h2>

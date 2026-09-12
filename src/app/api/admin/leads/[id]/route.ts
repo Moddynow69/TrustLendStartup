@@ -4,10 +4,15 @@ import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import { getLeadById } from "@/lib/db/leads";
 import { handleApiError } from "@/lib/api-response";
 import { z } from "zod";
+import { isRegisteredLender } from "@/lib/lenders";
 
 const adminLeadUpdateSchema = z.object({
   assignedTo: z.string().min(1).optional(),
-  bank: z.string().min(2).optional(),
+  bank: z
+    .string()
+    .min(2)
+    .refine(isRegisteredLender, "Select an RBI-registered NBFC or ARC from the list")
+    .optional(),
   productType: z.string().min(2).optional(),
   note: z.string().optional(),
 });

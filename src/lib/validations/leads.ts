@@ -1,10 +1,14 @@
 import { z } from "zod";
+import { isRegisteredLender } from "@/lib/lenders";
 
 export const createLeadSchema = z.object({
   customerName: z.string().min(2, "Customer name is required"),
   productType: z.string().min(2, "Product type is required"),
   amount: z.number().positive("Amount must be greater than zero"),
-  bank: z.string().min(2, "Bank is required"),
+  bank: z
+    .string()
+    .min(2, "Bank is required")
+    .refine(isRegisteredLender, "Select an RBI-registered NBFC or ARC from the list"),
   caseType: z.enum(["SECURED", "UNSECURED"]),
   assignedTo: z.string().min(1, "Assigned user is required"),
 });
