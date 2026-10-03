@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
           email: profile.email,
           username: profile.username ?? null,
           role: profile.role,
+          personalizedPayoutRate:profile.personalizedPayoutRate??null,
+
         },
       });
       res.cookies.set(sessionCookieOptions().name, sessionCookie, sessionCookieOptions());

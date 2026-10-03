@@ -56,6 +56,7 @@ export function useCreateLead() {
       bank: string;
       caseType: "SECURED" | "UNSECURED";
       assignedTo: string;
+      selectedPlan: "50-50" | "70-30" | "90-10" | "PERSONALIZED";
     }) => api.post<{ lead: Lead }>("/api/leads", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
   });

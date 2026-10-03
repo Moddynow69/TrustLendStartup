@@ -81,6 +81,7 @@ Every subsequent API request is authenticated by verifying that session cookie s
 - A lead cannot enter the Secured/Unsecured stage flow until `verificationStatus` is `GREEN` (`lib/business/status-flow.ts` + the `/status` route).
 - Stage transitions are validated against a strict ordered array per `caseType` — skipping or reversing a stage is rejected with a 400. `REJECTED` is reachable from any non-terminal stage and always requires `rejectionReason`.
 - A payout is only ever created when a lead's status becomes `DISBURSED`, and `payoutAmount = amount * payoutRate` (`lib/db/payouts.ts`).
+- Every lead is created with a **payout rate plan** (`lib/business/payout-plans.ts`): `50-50`, `70-30`, `90-10`, or `PERSONALIZED`. The rate is the admin's share, reflecting how much processing work the admin takes on. `PERSONALIZED` resolves at disbursal time from the lead creator's `personalizedPayoutRate` on their user profile, which only an admin can set (`/admin/users` → Manage user). A lead's plan is fixed once submitted; each plan option links out to its own terms page at `/terms/<plan>`.
 - Role checks (`lib/business/permissions.ts`) gate every mutating endpoint: only OPERATIONS/ADMIN can set verification status; only ADMIN can progress case-type stages, process payouts, or manage users; DSA/PARTNER can only see their own leads and payouts.
 
 ## Known MVP simplifications (documented, not hidden)

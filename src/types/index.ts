@@ -25,6 +25,10 @@ export type LeadStatus = SecuredStatus | UnsecuredStatus | "LEAD_SUBMITTED";
 
 export type PayoutStatus = "PENDING" | "APPROVED" | "PAID" | "HOLD";
 
+/** 50-50 / 70-30 / 90-10 are fixed plans; PERSONALIZED resolves via the
+ * lead creator's `personalizedPayoutRate`, set by an admin. */
+export type PayoutPlan = "50-50" | "70-30" | "90-10" | "PERSONALIZED";
+
 export interface UserProfile {
   id: string; // Firebase Auth UID
   name: string;
@@ -34,6 +38,9 @@ export interface UserProfile {
   isActive: boolean;
   createdAt: string; // ISO timestamp
   createdBy: string | null;
+  /** Custom payout rate (0-1) set by an admin for this user only.
+   * null means the personalized plan option is not available to them. */
+  personalizedPayoutRate: number | null;
 }
 
 export interface Lead {
@@ -49,6 +56,8 @@ export interface Lead {
   assignedTo: string;
   createdBy: string;
   verifiedBy: string | null;
+  /** Payout rate plan chosen at lead creation; fixed once submitted. */
+  selectedPlan: PayoutPlan;
   createdAt: string;
   updatedAt: string;
 }

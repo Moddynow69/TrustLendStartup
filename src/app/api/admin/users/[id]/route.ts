@@ -17,6 +17,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (body.name) firestoreUpdates.name = body.name;
     if (body.role) firestoreUpdates.role = body.role;
     if (typeof body.isActive === "boolean") firestoreUpdates.isActive = body.isActive;
+    if (body.personalizedPayoutRate !== undefined) {
+      // Stored as a 0-1 decimal; the admin UI collects a 0-100 percent.
+      firestoreUpdates.personalizedPayoutRate =
+        body.personalizedPayoutRate === null ? null : body.personalizedPayoutRate / 100;
+    }
 
     if (Object.keys(firestoreUpdates).length > 0) {
       await ref.update(firestoreUpdates);
@@ -46,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         username: data.username ?? null,
         role: data.role,
         isActive: data.isActive,
+        personalizedPayoutRate: typeof data.personalizedPayoutRate === "number" ? data.personalizedPayoutRate : null,
       },
     });
   } catch (err) {

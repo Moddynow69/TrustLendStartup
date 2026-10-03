@@ -23,6 +23,14 @@ export const updateUserSchema = z.object({
   role: z.enum(["DSA", "PARTNER", "OPERATIONS", "ADMIN"]).optional(),
   isActive: z.boolean().optional(),
   newPassword: passwordSchema.optional(),
+  /** Percentage (0-100, exclusive), or null to clear/hide the personalized
+   * plan option for this user. Converted to a 0-1 decimal before storage. */
+  personalizedPayoutRate: z
+    .number()
+    .gt(0, "Payout rate must be greater than 0%")
+    .lt(100, "Payout rate must be less than 100%")
+    .nullable()
+    .optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;

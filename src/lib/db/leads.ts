@@ -1,6 +1,6 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
-import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType } from "@/types";
+import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType, PayoutPlan } from "@/types";
 import { NotFoundError } from "@/lib/api-response";
 import { getInitialStatus } from "@/lib/business/status-flow";
 
@@ -18,6 +18,7 @@ function serializeLead(id: string, data: FirebaseFirestore.DocumentData): Lead {
     assignedTo: data.assignedTo,
     createdBy: data.createdBy,
     verifiedBy: data.verifiedBy ?? null,
+    selectedPlan: data.selectedPlan,
     createdAt: data.createdAt?.toDate?.().toISOString?.() ?? data.createdAt,
     updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? data.updatedAt,
   };
@@ -31,6 +32,7 @@ export async function createLead(input: {
   caseType: CaseType;
   assignedTo: string;
   createdBy: string;
+  selectedPlan: PayoutPlan;
 }): Promise<Lead> {
   const ref = adminDb.collection(COLLECTIONS.leads).doc();
   const now = FieldValue.serverTimestamp();

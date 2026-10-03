@@ -20,10 +20,39 @@ export function ManageUserModal({
 }) {
   const [role, setRole] = useState<Role>(user?.role ?? "PARTNER");
   const [newPassword, setNewPassword] = useState("");
+  const [personalizedRate, setPersonalizedRate] = useState(
+    user?.personalizedPayoutRate != null ? String(Math.round(user.personalizedPayoutRate * 100)) : ""
+  );
+  const [rateError, setRateError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const updateUser = useUpdateUser(user?.id ?? "");
 
   if (!user) return null;
+
+  async function handleSavePersonalizedRate() {
+    setRateError(null);
+    const trimmed = personalizedRate.trim();
+    if (trimmed === "") {
+      try {
+        await updateUser.mutateAsync({ personalizedPayoutRate: null });
+        toast.success("Personalized rate cleared");
+      } catch (err) {
+        setRateError(err instanceof ApiClientError ? err.message : "Failed to clear rate");
+      }
+      return;
+    }
+    const pct = Number(trimmed);
+    if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) {
+      setRateError("Enter a number between 0 and 100 (exclusive).");
+      return;
+    }
+    try {
+      await updateUser.mutateAsync({ personalizedPayoutRate: pct });
+      toast.success("Personalized rate saved");
+    } catch (err) {
+      setRateError(err instanceof ApiClientError ? err.message : "Failed to save rate");
+    }
+  }
 
   async function handleToggleActive() {
     try {
@@ -92,6 +121,29 @@ export function ManageUserModal({
           />
           <Button onClick={handleRoleChange} loading={updateUser.isPending}>
             Update
+          </Button>
+        </div>
+
+        <div className="space-y-2 border-t border-ink-100 pt-4">
+          <Input
+            label="Personalized payout rate (%)"
+            type="number"
+            min="1"
+            max="99"
+            step="1"
+            placeholder="e.g. 65"
+            value={personalizedRate}
+            onChange={(e) => setPersonalizedRate(e.target.value)}
+            hint="Shown to this user as their Personalized plan option on leads. Leave blank to hide it."
+          />
+          {rateError && <p className="text-sm text-status-red">{rateError}</p>}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleSavePersonalizedRate}
+            loading={updateUser.isPending}
+          >
+            Save personalized rate
           </Button>
         </div>
 

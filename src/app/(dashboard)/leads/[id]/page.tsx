@@ -14,6 +14,7 @@ import { StatusUpdateModal } from "@/components/leads/status-update-modal";
 import { useLead, useLeadTimeline } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { canSetVerificationStatus, canUpdateCaseStatus } from "@/lib/business/permissions";
+import { PAYOUT_PLANS, PERSONALIZED_PLAN } from "@/lib/business/payout-plans";
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -65,6 +66,14 @@ export default function LeadDetailPage() {
               <Row label="Case type" value={lead.caseType} />
               <Row label="Verification" value={<VerificationBadge status={lead.verificationStatus} />} />
               <Row label="Status" value={<LeadStatusBadge status={lead.status} />} />
+              {lead.selectedPlan ? <Row
+                label="Payout plan"
+                value={
+                  lead.selectedPlan === "PERSONALIZED"
+                    ? PERSONALIZED_PLAN.label
+                    : PAYOUT_PLANS[lead.selectedPlan].label
+                }
+              /> : null}
               <Row label="Created" value={format(new Date(lead.createdAt), "d MMM yyyy, h:mm a")} />
             </dl>
 

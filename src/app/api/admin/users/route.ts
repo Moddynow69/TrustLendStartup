@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
         role: data.role,
         isActive: data.isActive,
         createdAt: data.createdAt?.toDate?.().toISOString?.() ?? data.createdAt,
+        personalizedPayoutRate: typeof data.personalizedPayoutRate === "number" ? data.personalizedPayoutRate : null,
       };
     });
     return NextResponse.json({ users });

@@ -3,7 +3,7 @@ import { requireUser, AuthError } from "@/lib/auth/session";
 import { createLeadSchema, leadListQuerySchema } from "@/lib/validations/leads";
 import { canCreateLead } from "@/lib/business/permissions";
 import { createLead, listLeads } from "@/lib/db/leads";
-import { handleApiError } from "@/lib/api-response";
+import { handleApiError, BadRequestError } from "@/lib/api-response";
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +33,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = createLeadSchema.parse(await req.json());
+
+    if (body.selectedPlan === "PERSONALIZED" && user.personalizedPayoutRate == null) {
+      throw new BadRequestError(
+        "No personalized payout rate has been set for your account. Ask an admin to configure one, or choose a different plan."
+      );
+    }
+
     const lead = await createLead({ ...body, createdBy: user.id });
     return NextResponse.json({ lead }, { status: 201 });
   } catch (err) {

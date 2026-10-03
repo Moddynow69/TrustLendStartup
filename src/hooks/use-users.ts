@@ -33,6 +33,7 @@ export function useUpdateUser(userId: string) {
       role?: Role;
       isActive?: boolean;
       newPassword?: string;
+      personalizedPayoutRate?: number | null;
     }) => api.patch<{ user: UserProfile }>(`/api/admin/users/${userId}`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });

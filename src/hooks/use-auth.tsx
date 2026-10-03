@@ -12,6 +12,7 @@ interface SessionUser {
   email: string;
   username: string | null;
   role: Role;
+  personalizedPayoutRate: number | null;
 }
 
 interface AuthContextValue {

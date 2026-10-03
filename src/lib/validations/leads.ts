@@ -11,6 +11,9 @@ export const createLeadSchema = z.object({
     .refine(isRegisteredLender, "Select an RBI-registered NBFC or ARC from the list"),
   caseType: z.enum(["SECURED", "UNSECURED"]),
   assignedTo: z.string().min(1, "Assigned user is required"),
+  selectedPlan: z.enum(["50-50", "70-30", "90-10", "PERSONALIZED"], {
+    required_error: "Select a payout rate plan",
+  }),
 });
 
 export const verificationStatusSchema = z.object({

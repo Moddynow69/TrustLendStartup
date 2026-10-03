@@ -68,6 +68,7 @@ export async function requireUser(req: NextRequest): Promise<UserProfile> {
     isActive: data.isActive,
     createdAt: data.createdAt?.toDate?.().toISOString?.() ?? data.createdAt,
     createdBy: data.createdBy ?? null,
+    personalizedPayoutRate: typeof data.personalizedPayoutRate === "number" ? data.personalizedPayoutRate : null,
   };
 }
 
@@ -98,6 +99,7 @@ export async function getServerUser(): Promise<UserProfile | null> {
       isActive: data.isActive,
       createdAt: data.createdAt?.toDate?.().toISOString?.() ?? data.createdAt,
       createdBy: data.createdBy ?? null,
+      personalizedPayoutRate: typeof data.personalizedPayoutRate === "number" ? data.personalizedPayoutRate : null,
     };
   } catch {
     return null;

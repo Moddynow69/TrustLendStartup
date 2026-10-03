@@ -5,13 +5,16 @@ import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/form";
 import { LenderCombobox } from "@/components/ui/lender-combobox";
+import { PayoutPlanSelect } from "@/components/leads/payout-plan-select";
 import { Button } from "@/components/ui/button";
 import { useCreateLead } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiClientError } from "@/lib/api-client";
+import type { PayoutPlan } from "@/types";
 
 export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
+  console.log("user", user);
   const createLead = useCreateLead();
 
   const [form, setForm] = useState({
@@ -21,6 +24,7 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
     bank: "",
     caseType: "SECURED",
   });
+  const [selectedPlan, setSelectedPlan] = useState<PayoutPlan | "">("");
   const [error, setError] = useState<string | null>(null);
 
   function update<K extends keyof typeof form>(key: K, value: string) {
@@ -31,10 +35,14 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
     e.preventDefault();
     if (!user) return;
     setError(null);
-
+    
     const amount = Number(form.amount);
     if (!form.customerName || !form.productType || !form.bank || !amount) {
       setError("Please fill in all fields with a valid amount.");
+      return;
+    }
+    if (!selectedPlan) {
+      setError("Please select a payout rate plan.");
       return;
     }
 
@@ -46,9 +54,11 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
         bank: form.bank,
         caseType: form.caseType as "SECURED" | "UNSECURED",
         assignedTo: user.id,
+        selectedPlan,
       });
       toast.success("Lead created");
       setForm({ customerName: "", productType: "", amount: "", bank: "", caseType: "SECURED" });
+      setSelectedPlan("");
       onClose();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Failed to create lead");
@@ -57,7 +67,7 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
 
   return (
     <Modal open={open} onClose={onClose} title="Add lead">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4 md:max-w-[600px] w-full md:max-h-[600px] h-full overflow-y-auto">
         <Input
           label="Customer name"
           value={form.customerName}
@@ -85,6 +95,11 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
             { value: "SECURED", label: "Secured" },
             { value: "UNSECURED", label: "Unsecured" },
           ]}
+        />
+        <PayoutPlanSelect
+          value={selectedPlan}
+          onChange={setSelectedPlan}
+          personalizedPayoutRate={user?.personalizedPayoutRate}
         />
 
         {error && <p className="text-sm text-status-red">{error}</p>}

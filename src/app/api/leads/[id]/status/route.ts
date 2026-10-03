@@ -4,11 +4,10 @@ import { leadStatusUpdateSchema } from "@/lib/validations/leads";
 import { getLeadById, updateLeadStatus } from "@/lib/db/leads";
 import { isValidTransition } from "@/lib/business/status-flow";
 import { createPayoutForLead } from "@/lib/db/payouts";
+import { resolvePayoutRate } from "@/lib/business/payout-plans";
+import { adminDb, COLLECTIONS } from "@/lib/firebase/admin";
 import { handleApiError, BadRequestError } from "@/lib/api-response";
 import type { LeadStatus } from "@/types";
-
-/** Default payout rate applied automatically on disbursement for the MVP. */
-const DEFAULT_PAYOUT_RATE = 0.01;
 
 /**
  * Section 5.2/5.4: only ADMIN may progress a lead through its case-type
@@ -46,9 +45,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       body.note
     );
 
-    // Section 5.3: payout creation triggers only on DISBURSED.
+    // Section 5.3: payout creation triggers only on DISBURSED. The rate
+    // comes from the plan the DSA/PARTNER chose at lead creation; for
+    // PERSONALIZED it's resolved from the lead creator's own profile,
+    // since an admin may have changed it after the lead was submitted.
     if (nextStatus === "DISBURSED") {
-      await createPayoutForLead(updated.id, updated.amount, DEFAULT_PAYOUT_RATE);
+      let personalizedRate: number | null = null;
+      if (updated.selectedPlan === "PERSONALIZED") {
+        const creatorSnap = await adminDb.collection(COLLECTIONS.users).doc(updated.createdBy).get();
+        personalizedRate = creatorSnap.exists
+          ? (creatorSnap.data()?.personalizedPayoutRate ?? null)
+          : null;
+      }
+
+      const payoutRate = resolvePayoutRate(updated.selectedPlan, personalizedRate);
+      if (payoutRate == null) {
+        throw new BadRequestError(
+          "This lead's PERSONALIZED plan has no payout rate configured for the creator. Ask an admin to set one before disbursing."
+        );
+      }
+
+      await createPayoutForLead(updated.id, updated.amount, payoutRate);
     }
 
     return NextResponse.json({ lead: updated });
