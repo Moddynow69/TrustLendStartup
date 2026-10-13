@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "seed:users": "node scripts/seed-users.js",
-    "backfill:payouts": "node scripts/backfill-payout-created-by.js"
+    "backfill:payouts": "node scripts/backfill-payout-created-by.js",
+    "backfill:lead-plans": "node scripts/backfill-lead-plans.js"
   },
   "dependencies": {
     "next": "14.2.5",

@@ -27,6 +27,12 @@ export async function readAdminShareInTransaction(
   tx: FirebaseFirestore.Transaction,
   lead: { selectedPlan: PayoutPlan; createdBy: string }
 ): Promise<number> {
+  // Leads created before payout plans existed have no selectedPlan.
+  if (!lead.selectedPlan) {
+    throw new BadRequestError(
+      "This lead has no payout plan. Set one (npm run backfill:lead-plans) before disbursing."
+    );
+  }
   let personalizedRate: number | null = null;
   if (lead.selectedPlan === "PERSONALIZED") {
     const creatorSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.createdBy));
