@@ -1,12 +1,16 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
-import type { Payout, PayoutLog, PayoutStatus, UserProfile } from "@/types";
+import type { Payout, PayoutLog, PayoutPlan, PayoutStatus, UserProfile } from "@/types";
 import { NotFoundError, ConflictError, BadRequestError } from "@/lib/api-response";
+import { calculatePayout, resolveAdminShare } from "@/lib/business/payout-plans";
 
 function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payout {
   return {
     id,
     leadId: data.leadId,
+    // Absent on payouts created before commission-based payouts existed.
+    commissionRate: typeof data.commissionRate === "number" ? data.commissionRate : null,
+    commissionAmount: typeof data.commissionAmount === "number" ? data.commissionAmount : null,
     payoutRate: data.payoutRate,
     payoutAmount: data.payoutAmount,
     status: data.status,
@@ -15,9 +19,34 @@ function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payo
 }
 
 /**
+ * Reads (inside a transaction) the admin's share of the commission for a
+ * lead's plan. PERSONALIZED resolves from the lead creator's current
+ * profile, since an admin may have changed it after the lead was submitted.
+ */
+export async function readAdminShareInTransaction(
+  tx: FirebaseFirestore.Transaction,
+  lead: { selectedPlan: PayoutPlan; createdBy: string }
+): Promise<number> {
+  let personalizedRate: number | null = null;
+  if (lead.selectedPlan === "PERSONALIZED") {
+    const creatorSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.createdBy));
+    personalizedRate = creatorSnap.exists
+      ? (creatorSnap.data()?.personalizedPayoutRate ?? null)
+      : null;
+  }
+  const adminShare = resolveAdminShare(lead.selectedPlan, personalizedRate);
+  if (adminShare == null) {
+    throw new BadRequestError(
+      "This lead's PERSONALIZED plan has no payout rate configured for the creator. Ask an admin to set one before disbursing."
+    );
+  }
+  return adminShare;
+}
+
+/**
  * Stages a new payout (and its first log entry) inside an existing
- * transaction. Section 5.3: payoutAmount = amount * payoutRate. Guards
- * against a duplicate payout for the same lead — the duplicate check is a
+ * transaction; amounts come from `calculatePayout`. Guards against a
+ * duplicate payout for the same lead — the duplicate check is a
  * transactional read, so two concurrent disbursals can't both pass it.
  *
  * Like every Firestore transaction, all reads must happen before any
@@ -25,7 +54,13 @@ function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payo
  */
 export async function createPayoutInTransaction(
   tx: FirebaseFirestore.Transaction,
-  input: { leadId: string; createdBy: string; amount: number; payoutRate: number }
+  input: {
+    leadId: string;
+    createdBy: string;
+    amount: number;
+    commissionRate: number;
+    adminShare: number;
+  }
 ): Promise<FirebaseFirestore.DocumentReference> {
   const existing = await tx.get(
     adminDb.collection(COLLECTIONS.payouts).where("leadId", "==", input.leadId).limit(1)
@@ -34,6 +69,12 @@ export async function createPayoutInTransaction(
     throw new ConflictError("A payout already exists for this lead");
   }
 
+  const { commissionAmount, payoutRate, payoutAmount } = calculatePayout(
+    input.amount,
+    input.commissionRate,
+    input.adminShare
+  );
+
   const ref = adminDb.collection(COLLECTIONS.payouts).doc();
   const now = FieldValue.serverTimestamp();
   tx.set(ref, {
@@ -41,8 +82,10 @@ export async function createPayoutInTransaction(
     // Denormalized from the lead so DSA/PARTNER payout lists can filter on
     // it directly instead of resolving their lead IDs first.
     createdBy: input.createdBy,
-    payoutRate: input.payoutRate,
-    payoutAmount: Number((input.amount * input.payoutRate).toFixed(2)),
+    commissionRate: input.commissionRate,
+    commissionAmount,
+    payoutRate,
+    payoutAmount,
     status: "PENDING",
     createdAt: now,
   });
@@ -51,11 +94,12 @@ export async function createPayoutInTransaction(
 }
 
 /**
- * Manual/administrative payout creation for an already-DISBURSED lead.
+ * Manual/administrative payout creation for an already-DISBURSED lead that
+ * has none (e.g. one disbursed before payouts were created atomically).
  * The lead read, DISBURSED check, duplicate check and writes all happen in
- * one transaction.
+ * one transaction. `commissionRate` is a 0-1 decimal.
  */
-export async function createPayoutForLead(leadId: string, payoutRate: number): Promise<Payout> {
+export async function createPayoutForLead(leadId: string, commissionRate: number): Promise<Payout> {
   const ref = await adminDb.runTransaction(async (tx) => {
     const leadSnap = await tx.get(adminDb.collection(COLLECTIONS.leads).doc(leadId));
     if (!leadSnap.exists) throw new NotFoundError("Lead not found");
@@ -63,11 +107,16 @@ export async function createPayoutForLead(leadId: string, payoutRate: number): P
     if (lead.status !== "DISBURSED") {
       throw new BadRequestError("Payouts can only be created for DISBURSED leads");
     }
+    const adminShare = await readAdminShareInTransaction(tx, {
+      selectedPlan: lead.selectedPlan,
+      createdBy: lead.createdBy,
+    });
     return createPayoutInTransaction(tx, {
       leadId,
       createdBy: lead.createdBy,
       amount: lead.amount,
-      payoutRate,
+      commissionRate,
+      adminShare,
     });
   });
 
@@ -143,25 +192,4 @@ export async function getPayoutTimeline(payoutId: string): Promise<PayoutLog[]> 
       timestamp: data.timestamp?.toDate?.().toISOString?.() ?? data.timestamp,
     };
   });
-}
-
-/** Finds all DISBURSED leads that don't yet have a payout record. */
-export async function findDisbursedLeadsWithoutPayout() {
-  const leadsSnap = await adminDb
-    .collection(COLLECTIONS.leads)
-    .where("status", "==", "DISBURSED")
-    .get();
-
-  const results: { id: string }[] = [];
-  for (const doc of leadsSnap.docs) {
-    const payoutSnap = await adminDb
-      .collection(COLLECTIONS.payouts)
-      .where("leadId", "==", doc.id)
-      .limit(1)
-      .get();
-    if (payoutSnap.empty) {
-      results.push({ id: doc.id });
-    }
-  }
-  return results;
 }

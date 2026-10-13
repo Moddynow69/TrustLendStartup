@@ -21,15 +21,26 @@ export const verificationStatusSchema = z.object({
   note: z.string().optional(),
 });
 
+/** Lender commission as a percent of the loan amount (e.g. 1.5 for 1.5%). */
+export const commissionPercentSchema = z
+  .number()
+  .gt(0, "Commission rate must be greater than 0%")
+  .max(100, "Commission rate can't exceed 100%");
+
 export const leadStatusUpdateSchema = z
   .object({
     status: z.string().min(1),
     rejectionReason: z.string().optional(),
     note: z.string().optional(),
+    commissionRate: commissionPercentSchema.optional(),
   })
   .refine((data) => data.status !== "REJECTED" || !!data.rejectionReason?.trim(), {
     message: "rejectionReason is required when status is REJECTED",
     path: ["rejectionReason"],
+  })
+  .refine((data) => data.status !== "DISBURSED" || data.commissionRate != null, {
+    message: "commissionRate is required when status is DISBURSED",
+    path: ["commissionRate"],
   });
 
 export const leadListQuerySchema = z.object({

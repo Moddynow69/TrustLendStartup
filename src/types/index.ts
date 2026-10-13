@@ -70,9 +70,17 @@ export interface LeadLog {
   timestamp: string;
 }
 
+/**
+ * The DSA/PARTNER's share of the lender's commission on a disbursed lead.
+ * Rates are 0-1 decimals: commissionAmount = loan amount × commissionRate,
+ * payoutAmount = commissionAmount × payoutRate (= 1 − the plan's admin share).
+ */
 export interface Payout {
   id: string;
   leadId: string;
+  /** null on payouts created before commission-based payouts existed. */
+  commissionRate: number | null;
+  commissionAmount: number | null;
   payoutRate: number;
   payoutAmount: number;
   status: PayoutStatus;

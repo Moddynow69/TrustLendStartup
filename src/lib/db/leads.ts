@@ -3,8 +3,7 @@ import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType, PayoutPlan } from "@/types";
 import { NotFoundError, BadRequestError } from "@/lib/api-response";
 import { getInitialStatus, isValidTransition } from "@/lib/business/status-flow";
-import { resolvePayoutRate } from "@/lib/business/payout-plans";
-import { createPayoutInTransaction } from "@/lib/db/payouts";
+import { createPayoutInTransaction, readAdminShareInTransaction } from "@/lib/db/payouts";
 
 function serializeLead(id: string, data: FirebaseFirestore.DocumentData): Lead {
   return {
@@ -163,16 +162,17 @@ export async function setVerificationStatus(
  *
  * Section 5.2: the lead must be verification-GREEN, and the transition
  * must follow the strict, in-order flow for its caseType.
- * Section 5.3: the payout rate comes from the plan chosen at lead creation;
- * for PERSONALIZED it's resolved from the creator's current profile.
+ * Section 5.3: moving to DISBURSED requires `commissionRate` (the lender's
+ * commission on this case, a 0-1 decimal); the lead's plan then splits that
+ * commission and the payout records the DSA/PARTNER's share.
  */
 export async function transitionLeadStatus(
   leadId: string,
   nextStatus: LeadStatus,
   updatedBy: string,
-  rejectionReason?: string,
-  note?: string
+  options: { rejectionReason?: string; note?: string; commissionRate?: number } = {}
 ): Promise<Lead> {
+  const { rejectionReason, note, commissionRate } = options;
   const ref = adminDb.collection(COLLECTIONS.leads).doc(leadId);
 
   await adminDb.runTransaction(async (tx) => {
@@ -193,31 +193,19 @@ export async function transitionLeadStatus(
       );
     }
 
-    let payoutRate: number | null = null;
     if (nextStatus === "DISBURSED") {
-      let personalizedRate: number | null = null;
-      if (lead.selectedPlan === "PERSONALIZED") {
-        const creatorSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.createdBy));
-        personalizedRate = creatorSnap.exists
-          ? (creatorSnap.data()?.personalizedPayoutRate ?? null)
-          : null;
+      if (commissionRate == null) {
+        throw new BadRequestError("Enter the lender's commission rate to disburse this lead");
       }
-      payoutRate = resolvePayoutRate(lead.selectedPlan, personalizedRate);
-      if (payoutRate == null) {
-        throw new BadRequestError(
-          "This lead's PERSONALIZED plan has no payout rate configured for the creator. Ask an admin to set one before disbursing."
-        );
-      }
-    }
-
-    // Payout first: its duplicate check is the last read, and it throws
-    // before any write is staged.
-    if (payoutRate != null) {
+      const adminShare = await readAdminShareInTransaction(tx, lead);
+      // Payout before the lead writes: its duplicate check is the last read,
+      // and it throws before any write is staged.
       await createPayoutInTransaction(tx, {
         leadId,
         createdBy: lead.createdBy,
         amount: lead.amount,
-        payoutRate,
+        commissionRate,
+        adminShare,
       });
     }
 

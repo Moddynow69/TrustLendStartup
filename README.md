@@ -24,7 +24,7 @@ src/
       auth/                  login, register, forgot-password, logout, me
       leads/                 CRUD, verification-status, status, timeline
       payouts/               list/get, process, status, timeline
-      admin/                 leads, users, payouts/process-all
+      admin/                 leads, users
     providers.tsx            React Query + Auth context
     layout.tsx / globals.css
   components/                UI primitives, leads, payouts, admin, layout
@@ -82,13 +82,15 @@ Every subsequent API request is authenticated by verifying that session cookie s
 
 - A lead cannot enter the Secured/Unsecured stage flow until `verificationStatus` is `GREEN` (`lib/business/status-flow.ts` + the `/status` route).
 - Stage transitions are validated against a strict ordered array per `caseType` — skipping or reversing a stage is rejected with a 400. `REJECTED` is reachable from any non-terminal stage and always requires `rejectionReason`.
-- A payout is only ever created when a lead's status becomes `DISBURSED`, and `payoutAmount = amount * payoutRate` (`lib/db/payouts.ts`).
-- Every lead is created with a **payout rate plan** (`lib/business/payout-plans.ts`): `50-50`, `70-30`, `90-10`, or `PERSONALIZED`. The rate is the admin's share, reflecting how much processing work the admin takes on. `PERSONALIZED` resolves at disbursal time from the lead creator's `personalizedPayoutRate` on their user profile, which only an admin can set (`/admin/users` → Manage user). A lead's plan is fixed once submitted; each plan option links out to its own terms page at `/terms/<plan>`.
+- A payout is only ever created when a lead's status becomes `DISBURSED`, in the same Firestore transaction as the status change. The admin must enter the lender's commission (% of the loan amount) to disburse; the lead's plan splits that commission, and the payout records the DSA/PARTNER's share (`calculatePayout` in `lib/business/payout-plans.ts`):
+  - `commissionAmount = amount × commissionRate`
+  - `payoutRate = 1 − adminShare` (e.g. 0.3 on the 70-30 plan)
+  - `payoutAmount = commissionAmount × payoutRate`
+- Every lead is created with a **payout rate plan** (`lib/business/payout-plans.ts`): `50-50`, `70-30`, `90-10`, or `PERSONALIZED`. The plan rate is the admin's share of the commission, reflecting how much processing work the admin takes on; the DSA/PARTNER gets the rest. `PERSONALIZED` resolves at disbursal time from the lead creator's `personalizedPayoutRate` (also an admin share) on their user profile, which only an admin can set (`/admin/users` → Manage user). A lead's plan is fixed once submitted; each plan option links out to its own terms page at `/terms/<plan>`.
 - Role checks (`lib/business/permissions.ts`) gate every mutating endpoint: only OPERATIONS/ADMIN can set verification status; only ADMIN can progress case-type stages, process payouts, or manage users; DSA/PARTNER can only see their own leads and payouts.
 
 ## Known MVP simplifications (documented, not hidden)
 
 - The login rate limiter (`lib/auth/rate-limit.ts`) is in-memory, which is fine for a single Vercel instance but won't share state across concurrently-scaled serverless functions — swap in Upstash/Redis before you need real brute-force protection at scale.
 - `search` on the leads list does a Firestore prefix match on `customerName`; there's no full-text search. Pair with Algolia/Typesense if you need fuzzy search.
-- The default payout rate (1%) is a placeholder constant in `app/api/leads/[id]/status/route.ts` — wire this to a real per-product/per-partner rate table before going live.
 - Password reset emails are generated via `adminAuth.generatePasswordResetLink` but not actually delivered — plug in your transactional email provider where the `TODO` is in `app/api/auth/forgot-password/route.ts`.

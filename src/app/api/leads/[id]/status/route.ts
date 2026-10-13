@@ -15,13 +15,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const admin = await requireRole(req, ["ADMIN"]);
     const body = leadStatusUpdateSchema.parse(await req.json());
 
-    const lead = await transitionLeadStatus(
-      params.id,
-      body.status as LeadStatus,
-      admin.id,
-      body.rejectionReason,
-      body.note
-    );
+    const lead = await transitionLeadStatus(params.id, body.status as LeadStatus, admin.id, {
+      rejectionReason: body.rejectionReason,
+      note: body.note,
+      // Collected as a percent; stored as a 0-1 decimal like every other rate.
+      commissionRate: body.commissionRate != null ? body.commissionRate / 100 : undefined,
+    });
 
     return NextResponse.json({ lead });
   } catch (err) {
