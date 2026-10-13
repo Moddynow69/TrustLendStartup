@@ -3,25 +3,19 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import toast from "react-hot-toast";
 import { Wallet, CheckCircle2, Clock, PauseCircle } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
-import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { PayoutStatusBadge } from "@/components/leads/status-badge";
 import { Select } from "@/components/ui/form";
-import { usePayouts, useProcessAllPayouts } from "@/hooks/use-payouts";
-import { useAuth } from "@/hooks/use-auth";
+import { usePayouts } from "@/hooks/use-payouts";
 import type { Payout } from "@/types";
-import { ApiClientError } from "@/lib/api-client";
 
 export default function PayoutsPage() {
-  const { user } = useAuth();
   const router = useRouter();
   const [status, setStatus] = useState("");
   const { data, isLoading } = usePayouts({ status, limit: 50 });
-  const processAll = useProcessAllPayouts();
 
   const stats = useMemo(() => {
     const items = data?.items ?? [];
@@ -35,33 +29,19 @@ export default function PayoutsPage() {
 
   const columns: Column<Payout>[] = [
     { header: "Lead ID", accessor: (p) => <span className="font-mono text-xs">{p.leadId.slice(0, 10)}…</span> },
-    { header: "Payout rate", accessor: (p) => `${(p.payoutRate * 100).toFixed(2)}%` },
-    { header: "Amount", accessor: (p) => `₹${p.payoutAmount.toLocaleString("en-IN")}` },
+    {
+      header: "Commission",
+      accessor: (p) => (p.commissionAmount != null ? `₹${p.commissionAmount.toLocaleString("en-IN")}` : "—"),
+    },
+    { header: "DSA/Partner share", accessor: (p) => `${(p.payoutRate * 100).toFixed(2)}%` },
+    { header: "Payout", accessor: (p) => `₹${p.payoutAmount.toLocaleString("en-IN")}` },
     { header: "Status", accessor: (p) => <PayoutStatusBadge status={p.status} /> },
     { header: "Created", accessor: (p) => format(new Date(p.createdAt), "d MMM yyyy") },
   ];
 
-  async function handleProcessAll() {
-    try {
-      const res = await processAll.mutateAsync(undefined);
-      toast.success(`Processed ${res.processedCount} payout(s)`);
-    } catch (err) {
-      toast.error(err instanceof ApiClientError ? err.message : "Failed to process payouts");
-    }
-  }
-
   return (
     <div>
-      <Topbar
-        title="Payouts"
-        actions={
-          user?.role === "ADMIN" ? (
-            <Button onClick={handleProcessAll} loading={processAll.isPending}>
-              Process all disbursed
-            </Button>
-          ) : undefined
-        }
-      />
+      <Topbar title="Payouts" />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <DashboardCard label="Total payouts" value={stats.total} icon={Wallet} accent="brand" />

@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { commissionPercentSchema } from "@/lib/validations/leads";
 
 export const processPayoutSchema = z.object({
   leadId: z.string().min(1),
-  payoutRate: z.number().positive("Payout rate must be greater than zero"),
+  /** Lender commission as a percent of the loan amount. */
+  commissionRate: commissionPercentSchema,
 });
 
 export const payoutStatusUpdateSchema = z.object({

@@ -4,44 +4,66 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/form";
 import { useUpdateLeadStatus } from "@/hooks/use-leads";
 import { getNextValidStatuses, STATUS_LABELS } from "@/lib/business/status-flow";
+import { calculatePayout, PAYOUT_PLANS } from "@/lib/business/payout-plans";
 import { ApiClientError } from "@/lib/api-client";
-import type { CaseType, LeadStatus } from "@/types";
+import type { CaseType, LeadStatus, PayoutPlan } from "@/types";
 import { clsx } from "clsx";
 
 export function StatusUpdateModal({
   leadId,
   caseType,
   currentStatus,
+  amount,
+  selectedPlan,
   open,
   onClose,
 }: {
   leadId: string;
   caseType: CaseType;
   currentStatus: LeadStatus;
+  amount: number;
+  selectedPlan: PayoutPlan;
   open: boolean;
   onClose: () => void;
 }) {
   const nextOptions = getNextValidStatuses(caseType, currentStatus);
   const [selected, setSelected] = useState<LeadStatus | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [commissionInput, setCommissionInput] = useState("");
   const mutation = useUpdateLeadStatus(leadId);
 
   const isRejectSelected = selected === "REJECTED";
+  const isDisburseSelected = selected === "DISBURSED";
+
+  const commissionPct = Number(commissionInput);
+  const commissionValid =
+    commissionInput.trim() !== "" && Number.isFinite(commissionPct) && commissionPct > 0 && commissionPct <= 100;
+  // The PERSONALIZED split depends on the creator's profile, which only the
+  // server resolves, so the preview shows the DSA share for fixed plans only.
+  const preview =
+    commissionValid && selectedPlan !== "PERSONALIZED"
+      ? calculatePayout(amount, commissionPct / 100, PAYOUT_PLANS[selectedPlan].rate)
+      : null;
+  const commissionAmount = commissionValid ? calculatePayout(amount, commissionPct / 100, 0).commissionAmount : null;
 
   async function handleSubmit() {
     if (!selected) return;
     if (isRejectSelected && !rejectionReason.trim()) return;
+    if (isDisburseSelected && !commissionValid) return;
 
     try {
       await mutation.mutateAsync({
         status: selected,
         rejectionReason: isRejectSelected ? rejectionReason : undefined,
+        commissionRate: isDisburseSelected ? commissionPct : undefined,
       });
       toast.success(`Lead moved to ${STATUS_LABELS[selected] ?? selected}`);
       setSelected(null);
       setRejectionReason("");
+      setCommissionInput("");
       onClose();
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "Failed to update status");
@@ -91,6 +113,45 @@ export function StatusUpdateModal({
             className="focus-ring w-full rounded-lg border border-ink-100 px-3 py-2 text-sm placeholder:text-ink-300"
           />
         )}
+
+        {isDisburseSelected && (
+          <div className="space-y-2">
+            <Input
+              label="Lender commission (% of loan amount)"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="e.g. 1.5"
+              value={commissionInput}
+              onChange={(e) => setCommissionInput(e.target.value)}
+              error={
+                commissionInput.trim() !== "" && !commissionValid
+                  ? "Enter a percentage greater than 0 and at most 100."
+                  : undefined
+              }
+            />
+            {commissionAmount != null && (
+              <dl className="space-y-1 rounded-lg bg-ink-50 px-3 py-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-ink-500">Commission</dt>
+                  <dd className="font-medium text-ink-900">₹{commissionAmount.toLocaleString("en-IN")}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-ink-500">
+                    DSA/Partner payout
+                    {preview ? ` (${Math.round(preview.payoutRate * 100)}%, ${selectedPlan} plan)` : ""}
+                  </dt>
+                  <dd className="font-medium text-ink-900">
+                    {preview
+                      ? `₹${preview.payoutAmount.toLocaleString("en-IN")}`
+                      : "Split by creator's personalized rate"}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 flex justify-end gap-3">
@@ -101,7 +162,11 @@ export function StatusUpdateModal({
           variant={isRejectSelected ? "danger" : "primary"}
           onClick={handleSubmit}
           loading={mutation.isPending}
-          disabled={!selected || (isRejectSelected && !rejectionReason.trim())}
+          disabled={
+            !selected ||
+            (isRejectSelected && !rejectionReason.trim()) ||
+            (isDisburseSelected && !commissionValid)
+          }
         >
           Confirm
         </Button>

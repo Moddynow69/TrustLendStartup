@@ -107,6 +107,8 @@ export default function LeadDetailPage() {
           leadId={lead.id}
           caseType={lead.caseType}
           currentStatus={lead.status}
+          amount={lead.amount}
+          selectedPlan={lead.selectedPlan}
           open={statusOpen}
           onClose={() => setStatusOpen(false)}
         />

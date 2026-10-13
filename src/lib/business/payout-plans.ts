@@ -41,12 +41,13 @@ export const PERSONALIZED_PLAN = {
 export const ALL_PAYOUT_PLANS: PayoutPlan[] = ["50-50", "70-30", "90-10", "PERSONALIZED"];
 
 /**
- * Resolves the numeric payout rate for a plan. For PERSONALIZED, the
- * caller must supply the lead creator's `personalizedPayoutRate` (a
- * decimal, e.g. 0.65) — returns null if that user has none configured,
- * which callers should treat as an error state.
+ * Resolves the admin's share of the commission (0-1) for a plan. For
+ * PERSONALIZED, the caller must supply the lead creator's
+ * `personalizedPayoutRate` (also an admin share, e.g. 0.65) — returns null
+ * if that user has none configured, which callers should treat as an
+ * error state.
  */
-export function resolvePayoutRate(
+export function resolveAdminShare(
   plan: PayoutPlan,
   personalizedPayoutRate: number | null | undefined
 ): number | null {
@@ -54,4 +55,23 @@ export function resolvePayoutRate(
     return typeof personalizedPayoutRate === "number" ? personalizedPayoutRate : null;
   }
   return PAYOUT_PLANS[plan].rate;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Section 5.3 payout math. The lender pays a commission on the disbursed
+ * amount (`commissionRate`, a 0-1 decimal entered by the admin at
+ * disbursal); the plan splits that commission between admin and
+ * DSA/PARTNER. The payout record is the DSA/PARTNER's share:
+ *
+ *   commissionAmount = amount × commissionRate
+ *   payoutRate       = 1 − adminShare
+ *   payoutAmount     = commissionAmount × payoutRate
+ */
+export function calculatePayout(amount: number, commissionRate: number, adminShare: number) {
+  const commissionAmount = round2(amount * commissionRate);
+  // Rounded to 4 dp so e.g. 1 − 0.7 is stored as 0.3, not 0.30000000000000004.
+  const payoutRate = Math.round((1 - adminShare) * 10000) / 10000;
+  return { commissionAmount, payoutRate, payoutAmount: round2(commissionAmount * payoutRate) };
 }

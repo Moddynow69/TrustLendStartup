@@ -23,7 +23,8 @@ export function PayoutPlanSelect({
   if (personalizedPayoutRate != null) {
     options.push({
       plan: "PERSONALIZED",
-      label: `${PERSONALIZED_PLAN.label} (${Math.round(personalizedPayoutRate * 100)}%)`,
+      // Same "admin-DSA" format as the fixed plans, e.g. "Personalized (65-35)".
+      label: `${PERSONALIZED_PLAN.label} (${Math.round(personalizedPayoutRate * 100)}-${100 - Math.round(personalizedPayoutRate * 100)})`,
       description: PERSONALIZED_PLAN.description,
       termsUrl: PERSONALIZED_PLAN.termsUrl,
     });

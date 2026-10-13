@@ -42,12 +42,3 @@ export function useUpdatePayoutStatus(payoutId: string) {
     },
   });
 }
-
-export function useProcessAllPayouts() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payoutRate?: number) =>
-      api.post<{ processedCount: number }>("/api/admin/payouts/process-all", { payoutRate }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["payouts"] }),
-  });
-}

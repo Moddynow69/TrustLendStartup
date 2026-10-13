@@ -126,7 +126,7 @@ export function ManageUserModal({
 
         <div className="space-y-2 border-t border-ink-100 pt-4">
           <Input
-            label="Personalized payout rate (%)"
+            label="Personalized admin share (%)"
             type="number"
             min="1"
             max="99"
@@ -134,7 +134,7 @@ export function ManageUserModal({
             placeholder="e.g. 65"
             value={personalizedRate}
             onChange={(e) => setPersonalizedRate(e.target.value)}
-            hint="Shown to this user as their Personalized plan option on leads. Leave blank to hide it."
+            hint="Admin's share of the lender commission on this user's Personalized-plan leads (e.g. 65 means the user gets 35%). Leave blank to hide the option."
           />
           {rateError && <p className="text-sm text-status-red">{rateError}</p>}
           <Button

@@ -78,7 +78,13 @@ export function useSetVerificationStatus(leadId: string) {
 export function useUpdateLeadStatus(leadId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { status: string; rejectionReason?: string; note?: string }) =>
+    mutationFn: (input: {
+      status: string;
+      rejectionReason?: string;
+      note?: string;
+      /** Lender commission as a percent; required for DISBURSED. */
+      commissionRate?: number;
+    }) =>
       api.patch<{ lead: Lead }>(`/api/leads/${leadId}/status`, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", leadId] });

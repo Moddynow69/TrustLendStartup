@@ -62,7 +62,15 @@ export default function PayoutDetailPage() {
           <dl className="space-y-3 text-sm">
             <Row label="Customer" value={lead?.customerName ?? "—"} />
             <Row label="Loan amount" value={lead ? `₹${lead.amount.toLocaleString("en-IN")}` : "—"} />
-            <Row label="Payout rate" value={`${(payout.payoutRate * 100).toFixed(2)}%`} />
+            <Row
+              label="Lender commission"
+              value={
+                payout.commissionRate != null && payout.commissionAmount != null
+                  ? `₹${payout.commissionAmount.toLocaleString("en-IN")} (${(payout.commissionRate * 100).toFixed(2)}%)`
+                  : "—"
+              }
+            />
+            <Row label="DSA/Partner share" value={`${(payout.payoutRate * 100).toFixed(2)}%`} />
             <Row label="Payout amount" value={`₹${payout.payoutAmount.toLocaleString("en-IN")}`} />
             <Row label="Status" value={<PayoutStatusBadge status={payout.status} />} />
             <Row label="Created" value={format(new Date(payout.createdAt), "d MMM yyyy")} />
