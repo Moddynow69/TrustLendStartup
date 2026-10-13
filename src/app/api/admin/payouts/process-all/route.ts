@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const pending = await findDisbursedLeadsWithoutPayout();
     const created = [];
     for (const lead of pending) {
-      created.push(await createPayoutForLead(lead.id, lead.amount, payoutRate));
+      created.push(await createPayoutForLead(lead.id, payoutRate));
     }
 
     return NextResponse.json({ processedCount: created.length, payouts: created });
