@@ -1,8 +1,10 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType, PayoutPlan } from "@/types";
-import { NotFoundError } from "@/lib/api-response";
-import { getInitialStatus } from "@/lib/business/status-flow";
+import { NotFoundError, BadRequestError } from "@/lib/api-response";
+import { getInitialStatus, isValidTransition } from "@/lib/business/status-flow";
+import { resolvePayoutRate } from "@/lib/business/payout-plans";
+import { createPayoutInTransaction } from "@/lib/db/payouts";
 
 function serializeLead(id: string, data: FirebaseFirestore.DocumentData): Lead {
   return {
@@ -153,7 +155,18 @@ export async function setVerificationStatus(
   return serializeLead(updatedSnap.id, updatedSnap.data()!);
 }
 
-export async function updateLeadStatus(
+/**
+ * Moves a lead to its next case-type stage and, on DISBURSED, creates its
+ * payout — all in one Firestore transaction, so a lead can never end up
+ * DISBURSED without a payout (e.g. if the PERSONALIZED rate is missing),
+ * and two concurrent requests can't both pass the transition check.
+ *
+ * Section 5.2: the lead must be verification-GREEN, and the transition
+ * must follow the strict, in-order flow for its caseType.
+ * Section 5.3: the payout rate comes from the plan chosen at lead creation;
+ * for PERSONALIZED it's resolved from the creator's current profile.
+ */
+export async function transitionLeadStatus(
   leadId: string,
   nextStatus: LeadStatus,
   updatedBy: string,
@@ -161,21 +174,65 @@ export async function updateLeadStatus(
   note?: string
 ): Promise<Lead> {
   const ref = adminDb.collection(COLLECTIONS.leads).doc(leadId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new NotFoundError("Lead not found");
 
-  const now = FieldValue.serverTimestamp();
-  await ref.update({
-    status: nextStatus,
-    rejectionReason: nextStatus === "REJECTED" ? rejectionReason : null,
-    updatedAt: now,
-  });
+  await adminDb.runTransaction(async (tx) => {
+    // Reads first — Firestore transactions require all reads before writes.
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new NotFoundError("Lead not found");
+    const lead = serializeLead(snap.id, snap.data()!);
 
-  await ref.collection("logs").add({
-    status: nextStatus,
-    note: note || (nextStatus === "REJECTED" ? `Rejected: ${rejectionReason}` : `Moved to ${nextStatus}`),
-    updatedBy,
-    timestamp: now,
+    if (lead.verificationStatus !== "GREEN") {
+      throw new BadRequestError(
+        "Lead must be verification-GREEN before it can move through case-type stages"
+      );
+    }
+    if (!isValidTransition(lead.caseType, lead.status, nextStatus)) {
+      throw new BadRequestError(
+        `Cannot move a ${lead.caseType} lead from ${lead.status} to ${nextStatus}. ` +
+          "Stages must progress in order and cannot be skipped or reversed."
+      );
+    }
+
+    let payoutRate: number | null = null;
+    if (nextStatus === "DISBURSED") {
+      let personalizedRate: number | null = null;
+      if (lead.selectedPlan === "PERSONALIZED") {
+        const creatorSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.createdBy));
+        personalizedRate = creatorSnap.exists
+          ? (creatorSnap.data()?.personalizedPayoutRate ?? null)
+          : null;
+      }
+      payoutRate = resolvePayoutRate(lead.selectedPlan, personalizedRate);
+      if (payoutRate == null) {
+        throw new BadRequestError(
+          "This lead's PERSONALIZED plan has no payout rate configured for the creator. Ask an admin to set one before disbursing."
+        );
+      }
+    }
+
+    // Payout first: its duplicate check is the last read, and it throws
+    // before any write is staged.
+    if (payoutRate != null) {
+      await createPayoutInTransaction(tx, {
+        leadId,
+        createdBy: lead.createdBy,
+        amount: lead.amount,
+        payoutRate,
+      });
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.update(ref, {
+      status: nextStatus,
+      rejectionReason: nextStatus === "REJECTED" ? rejectionReason : null,
+      updatedAt: now,
+    });
+    tx.set(ref.collection("logs").doc(), {
+      status: nextStatus,
+      note: note || (nextStatus === "REJECTED" ? `Rejected: ${rejectionReason}` : `Moved to ${nextStatus}`),
+      updatedBy,
+      timestamp: now,
+    });
   });
 
   const updatedSnap = await ref.get();

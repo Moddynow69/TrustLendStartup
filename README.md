@@ -57,6 +57,8 @@ firestore.indexes.json       Composite indexes required by the filter queries
 
 6. `npm run dev`
 
+> **Upgrading an existing database:** payouts now carry a denormalized `createdBy` (the lead creator) so DSA/PARTNER payout lists can query it directly. Deploy the updated indexes (`firebase deploy --only firestore:indexes`), then run `npm run backfill:payouts` once so older payouts get the field. It's safe to re-run.
+
 ### Troubleshooting: "Failed to parse private key... Invalid PEM formatted message"
 
 This means `FIREBASE_ADMIN_PRIVATE_KEY` isn't reaching the SDK as valid PEM text — it's an env-var formatting issue, not a code bug. Fixes, in order of likelihood:

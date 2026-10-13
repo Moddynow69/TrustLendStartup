@@ -1,7 +1,7 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Payout, PayoutLog, PayoutStatus, UserProfile } from "@/types";
-import { NotFoundError, ConflictError } from "@/lib/api-response";
+import { NotFoundError, ConflictError, BadRequestError } from "@/lib/api-response";
 
 function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payout {
   return {
@@ -15,36 +15,61 @@ function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payo
 }
 
 /**
- * Creates a payout for a lead. Section 5.3: only triggered when a lead's
- * status becomes DISBURSED; payoutAmount = amount * payoutRate. Guards
- * against creating a duplicate payout for the same lead.
+ * Stages a new payout (and its first log entry) inside an existing
+ * transaction. Section 5.3: payoutAmount = amount * payoutRate. Guards
+ * against a duplicate payout for the same lead — the duplicate check is a
+ * transactional read, so two concurrent disbursals can't both pass it.
+ *
+ * Like every Firestore transaction, all reads must happen before any
+ * writes: callers must do their own reads first, then call this.
  */
-export async function createPayoutForLead(
-  leadId: string,
-  amount: number,
-  payoutRate: number
-): Promise<Payout> {
-  const existing = await adminDb
-    .collection(COLLECTIONS.payouts)
-    .where("leadId", "==", leadId)
-    .limit(1)
-    .get();
+export async function createPayoutInTransaction(
+  tx: FirebaseFirestore.Transaction,
+  input: { leadId: string; createdBy: string; amount: number; payoutRate: number }
+): Promise<FirebaseFirestore.DocumentReference> {
+  const existing = await tx.get(
+    adminDb.collection(COLLECTIONS.payouts).where("leadId", "==", input.leadId).limit(1)
+  );
   if (!existing.empty) {
     throw new ConflictError("A payout already exists for this lead");
   }
 
   const ref = adminDb.collection(COLLECTIONS.payouts).doc();
   const now = FieldValue.serverTimestamp();
-  const payoutAmount = Number((amount * payoutRate).toFixed(2));
-
-  await ref.set({
-    leadId,
-    payoutRate,
-    payoutAmount,
+  tx.set(ref, {
+    leadId: input.leadId,
+    // Denormalized from the lead so DSA/PARTNER payout lists can filter on
+    // it directly instead of resolving their lead IDs first.
+    createdBy: input.createdBy,
+    payoutRate: input.payoutRate,
+    payoutAmount: Number((input.amount * input.payoutRate).toFixed(2)),
     status: "PENDING",
     createdAt: now,
   });
-  await ref.collection("logs").add({ status: "PENDING", timestamp: now });
+  tx.set(ref.collection("logs").doc(), { status: "PENDING", timestamp: now });
+  return ref;
+}
+
+/**
+ * Manual/administrative payout creation for an already-DISBURSED lead.
+ * The lead read, DISBURSED check, duplicate check and writes all happen in
+ * one transaction.
+ */
+export async function createPayoutForLead(leadId: string, payoutRate: number): Promise<Payout> {
+  const ref = await adminDb.runTransaction(async (tx) => {
+    const leadSnap = await tx.get(adminDb.collection(COLLECTIONS.leads).doc(leadId));
+    if (!leadSnap.exists) throw new NotFoundError("Lead not found");
+    const lead = leadSnap.data()!;
+    if (lead.status !== "DISBURSED") {
+      throw new BadRequestError("Payouts can only be created for DISBURSED leads");
+    }
+    return createPayoutInTransaction(tx, {
+      leadId,
+      createdBy: lead.createdBy,
+      amount: lead.amount,
+      payoutRate,
+    });
+  });
 
   const snap = await ref.get();
   return serializePayout(snap.id, snap.data()!);
@@ -63,27 +88,13 @@ export interface PayoutFilters {
 }
 
 /**
- * DSA/PARTNER see only payouts tied to leads they created; ADMIN sees all.
- * Since `payouts` doesn't denormalize `createdBy`, we resolve the caller's
- * lead IDs first for non-admins.
+ * DSA/PARTNER see only payouts tied to leads they created (via the
+ * denormalized `createdBy`); ADMIN sees all.
  */
 export async function listPayouts(user: UserProfile, filters: PayoutFilters) {
-  let leadIdFilter: string[] | null = null;
-
-  if (user.role === "DSA" || user.role === "PARTNER") {
-    const leadsSnap = await adminDb
-      .collection(COLLECTIONS.leads)
-      .where("createdBy", "==", user.id)
-      .get();
-    leadIdFilter = leadsSnap.docs.map((d) => d.id);
-    if (leadIdFilter.length === 0) return { items: [], nextCursor: null };
-  }
-
   let query: FirebaseFirestore.Query = adminDb.collection(COLLECTIONS.payouts);
-  if (leadIdFilter) {
-    // Firestore `in` supports up to 30 values; for an MVP with a moderate
-    // per-partner lead count this is sufficient.
-    query = query.where("leadId", "in", leadIdFilter.slice(0, 30));
+  if (user.role === "DSA" || user.role === "PARTNER") {
+    query = query.where("createdBy", "==", user.id);
   }
   if (filters.status) {
     query = query.where("status", "==", filters.status);
@@ -141,7 +152,7 @@ export async function findDisbursedLeadsWithoutPayout() {
     .where("status", "==", "DISBURSED")
     .get();
 
-  const results: { id: string; amount: number }[] = [];
+  const results: { id: string }[] = [];
   for (const doc of leadsSnap.docs) {
     const payoutSnap = await adminDb
       .collection(COLLECTIONS.payouts)
@@ -149,7 +160,7 @@ export async function findDisbursedLeadsWithoutPayout() {
       .limit(1)
       .get();
     if (payoutSnap.empty) {
-      results.push({ id: doc.id, amount: doc.data().amount });
+      results.push({ id: doc.id });
     }
   }
   return results;

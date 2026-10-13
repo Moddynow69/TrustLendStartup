@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "seed:users": "node scripts/seed-users.js"
+    "seed:users": "node scripts/seed-users.js",
+    "backfill:payouts": "node scripts/backfill-payout-created-by.js"
   },
   "dependencies": {
     "next": "14.2.5",
