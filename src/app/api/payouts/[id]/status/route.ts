@@ -6,9 +6,9 @@ import { handleApiError } from "@/lib/api-response";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await requireRole(req, ["ADMIN"]);
+    const admin = await requireRole(req, ["ADMIN"]);
     const body = payoutStatusUpdateSchema.parse(await req.json());
-    const payout = await updatePayoutStatus(params.id, body.status);
+    const payout = await updatePayoutStatus(params.id, body.status, admin.id);
     return NextResponse.json({ payout });
   } catch (err) {
     return handleApiError(err);

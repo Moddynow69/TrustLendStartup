@@ -21,7 +21,7 @@ src/
       admin/                 Admin lead overview
       admin/users/           Admin user management
     api/
-      auth/                  login, register, logout, me
+      auth/                  login, logout, me
       leads/                 CRUD, verification-status, status, timeline
       payouts/               list/get, process, status, timeline
       admin/                 leads, users
@@ -53,7 +53,7 @@ firestore.indexes.json       Composite indexes required by the filter queries
 
    Alternatively, run `npm run seed:users` to create a starter Admin (`admin` / `ADMINLOCK`) and DSA (`dsa` / `JustDoIt`) account in one shot — see `scripts/seed-users.js`. It reads `.env.local` directly and is safe to re-run (it updates the account if it already exists instead of failing).
 
-   > **Note:** those two seed passwords don't satisfy the app's own password policy (letter + number, enforced only on `/api/auth/register` and password-reset), because the seed script talks to Firebase Auth directly and Firebase itself only requires 6+ characters. They'll work fine for logging in, but if you later reset either password *through the app's admin UI*, you'll need one that includes a number.
+   > **Note:** those two seed passwords don't satisfy the app's own password policy (letter + number, enforced only when an admin creates an account or resets a password in the app), because the seed script talks to Firebase Auth directly and Firebase itself only requires 6+ characters. They'll work fine for logging in, but if you later reset either password *through the app's admin UI*, you'll need one that includes a number.
 
 6. `npm run dev`
 

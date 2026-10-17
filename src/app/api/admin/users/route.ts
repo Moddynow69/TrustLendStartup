@@ -28,7 +28,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** Same provisioning logic as /api/auth/register, exposed under /admin for the user-management UI. */
+/**
+ * Admin-only account provisioning (there is no public sign-up). Creates the
+ * Firebase Auth login, then the Firestore profile; if the profile write
+ * fails, the login is deleted again so no half-made account is left behind
+ * and the admin can simply retry.
+ */
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireRole(req, ["ADMIN"]);
@@ -44,22 +49,42 @@ export async function POST(req: NextRequest) {
       throw new ConflictError("An account with this email or username already exists");
     }
 
-    const userRecord = await adminAuth.createUser({
-      email,
-      password: body.password,
-      displayName: body.name,
-      disabled: false,
-    });
+    let userRecord;
+    try {
+      userRecord = await adminAuth.createUser({
+        email,
+        password: body.password,
+        displayName: body.name,
+        disabled: false,
+      });
+    } catch (err) {
+      // A Firebase login can exist without a Firestore profile (e.g. one
+      // created by hand in the Firebase Console), so the check above can miss it.
+      if ((err as { code?: string }).code === "auth/email-already-exists") {
+        throw new ConflictError(
+          "A login with this email or username already exists in Firebase Auth. Remove it in the Firebase Console or use a different one."
+        );
+      }
+      throw err;
+    }
 
-    await adminDb.collection(COLLECTIONS.users).doc(userRecord.uid).set({
-      name: body.name,
-      email,
-      username: body.username?.toLowerCase() ?? null,
-      role: body.role,
-      isActive: true,
-      createdAt: FieldValue.serverTimestamp(),
-      createdBy: admin.id,
-    });
+    try {
+      await adminDb.collection(COLLECTIONS.users).doc(userRecord.uid).set({
+        name: body.name,
+        email,
+        username: body.username?.toLowerCase() ?? null,
+        role: body.role,
+        isActive: true,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: admin.id,
+      });
+    } catch (err) {
+      // Roll back the login so it isn't left without a profile.
+      await adminAuth.deleteUser(userRecord.uid).catch((cleanupErr) => {
+        console.error("[admin-users] failed to roll back auth user", userRecord.uid, cleanupErr);
+      });
+      throw err;
+    }
 
     return NextResponse.json(
       { user: { id: userRecord.uid, name: body.name, email, role: body.role, isActive: true } },

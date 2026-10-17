@@ -17,20 +17,4 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export const registerSchema = z.object({
-  name: z.string().min(2, "Name is required"),
-  email: z.string().email().optional(),
-  username: z
-    .string()
-    .min(3)
-    .regex(/^[a-z0-9._-]+$/i, "Username may only contain letters, numbers, . _ -")
-    .optional(),
-  password: passwordSchema,
-  role: z.enum(["DSA", "PARTNER", "OPERATIONS", "ADMIN"]),
-}).refine((data) => data.email || data.username, {
-  message: "Either email or username is required",
-  path: ["email"],
-});
-
 export type LoginInput = z.infer<typeof loginSchema>;
-export type RegisterInput = z.infer<typeof registerSchema>;

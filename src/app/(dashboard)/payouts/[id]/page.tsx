@@ -1,18 +1,37 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
 import { CheckCircle2, Clock } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PayoutStatusBadge } from "@/components/leads/status-badge";
 import { usePayout, usePayoutTimeline, useUpdatePayoutStatus } from "@/hooks/use-payouts";
 import { useLead } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiClientError } from "@/lib/api-client";
+import { getNextPayoutStatuses } from "@/lib/business/payout-status";
+import type { PayoutStatus } from "@/types";
 import { clsx } from "clsx";
+
+/** Button text for each move an admin can make (see payout-status.ts). */
+const ACTION_LABELS: Record<PayoutStatus, string> = {
+  APPROVED: "Approve",
+  HOLD: "Put on hold",
+  PENDING: "Release hold",
+  PAID: "Mark as paid",
+};
+
+const SUCCESS_MESSAGES: Record<PayoutStatus, string> = {
+  APPROVED: "Payout approved",
+  HOLD: "Payout put on hold",
+  PENDING: "Hold released",
+  PAID: "Payout marked as paid",
+};
 
 export default function PayoutDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +40,7 @@ export default function PayoutDetailPage() {
   const { data: timelineData } = usePayoutTimeline(id);
   const updateStatus = useUpdatePayoutStatus(id!);
   const { data: leadData } = useLead(data?.payout.leadId);
+  const [confirmPaidOpen, setConfirmPaidOpen] = useState(false);
 
   if (isLoading || !data) {
     return (
@@ -34,10 +54,13 @@ export default function PayoutDetailPage() {
   const payout = data.payout;
   const lead = leadData?.lead;
 
-  async function markPaid() {
+  const nextStatuses = user?.role === "ADMIN" ? getNextPayoutStatuses(payout.status) : [];
+
+  async function moveTo(status: PayoutStatus) {
     try {
-      await updateStatus.mutateAsync("PAID");
-      toast.success("Payout marked as paid");
+      await updateStatus.mutateAsync(status);
+      toast.success(SUCCESS_MESSAGES[status]);
+      setConfirmPaidOpen(false);
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "Failed to update payout");
     }
@@ -48,13 +71,39 @@ export default function PayoutDetailPage() {
       <Topbar
         title="Payout details"
         actions={
-          user?.role === "ADMIN" && payout.status !== "PAID" ? (
-            <Button onClick={markPaid} loading={updateStatus.isPending}>
-              Mark as paid
-            </Button>
+          nextStatuses.length > 0 ? (
+            <>
+              {nextStatuses.map((status) => (
+                <Button
+                  key={status}
+                  variant={status === "PAID" ? "primary" : "secondary"}
+                  // Paid is final, so it goes through a confirmation first.
+                  onClick={() => (status === "PAID" ? setConfirmPaidOpen(true) : moveTo(status))}
+                  loading={updateStatus.isPending && updateStatus.variables === status}
+                  disabled={updateStatus.isPending}
+                >
+                  {ACTION_LABELS[status]}
+                </Button>
+              ))}
+            </>
           ) : undefined
         }
       />
+
+      <Modal open={confirmPaidOpen} onClose={() => setConfirmPaidOpen(false)} title="Mark payout as paid?">
+        <p className="text-sm text-ink-600">
+          This records ₹{payout.payoutAmount.toLocaleString("en-IN")} as paid. A paid payout is final and
+          can&apos;t be moved back to another status.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setConfirmPaidOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => moveTo("PAID")} loading={updateStatus.isPending}>
+            Mark as paid
+          </Button>
+        </div>
+      </Modal>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-ink-100 bg-white p-5 shadow-card lg:col-span-1">

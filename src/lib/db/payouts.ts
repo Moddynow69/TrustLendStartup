@@ -3,6 +3,7 @@ import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Payout, PayoutLog, PayoutPlan, PayoutStatus, UserProfile } from "@/types";
 import { NotFoundError, ConflictError, BadRequestError } from "@/lib/api-response";
 import { calculatePayout, resolveAdminShare } from "@/lib/business/payout-plans";
+import { isValidPayoutTransition, PAYOUT_STATUS_LABELS } from "@/lib/business/payout-status";
 
 function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payout {
   return {
@@ -169,14 +170,36 @@ export async function listPayouts(user: UserProfile, filters: PayoutFilters) {
   return { items, nextCursor };
 }
 
-export async function updatePayoutStatus(payoutId: string, status: PayoutStatus): Promise<Payout> {
+/**
+ * Moves a payout to `status` if the move is allowed (see
+ * lib/business/payout-status.ts; PAID is final). The check, the update and
+ * the timeline entry recording who made the change happen in one
+ * transaction.
+ */
+export async function updatePayoutStatus(
+  payoutId: string,
+  status: PayoutStatus,
+  updatedBy: string
+): Promise<Payout> {
   const ref = adminDb.collection(COLLECTIONS.payouts).doc(payoutId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new NotFoundError("Payout not found");
 
-  const now = FieldValue.serverTimestamp();
-  await ref.update({ status });
-  await ref.collection("logs").add({ status, timestamp: now });
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new NotFoundError("Payout not found");
+    const current = snap.data()!.status as PayoutStatus;
+
+    if (!isValidPayoutTransition(current, status)) {
+      throw new BadRequestError(
+        current === "PAID"
+          ? "This payout is already paid and can't be changed."
+          : `A payout can't move from ${PAYOUT_STATUS_LABELS[current]} to ${PAYOUT_STATUS_LABELS[status]}.`
+      );
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.update(ref, { status });
+    tx.set(ref.collection("logs").doc(), { status, updatedBy, timestamp: now });
+  });
 
   const updated = await ref.get();
   return serializePayout(updated.id, updated.data()!);
@@ -195,6 +218,9 @@ export async function getPayoutTimeline(payoutId: string): Promise<PayoutLog[]> 
     return {
       id: d.id,
       status: data.status,
+      // Absent on the initial PENDING entry and on entries written before
+      // payout changes were attributed.
+      updatedBy: data.updatedBy ?? null,
       timestamp: data.timestamp?.toDate?.().toISOString?.() ?? data.timestamp,
     };
   });
