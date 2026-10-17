@@ -38,6 +38,8 @@ export function useUpdatePayoutStatus(payoutId: string) {
       api.patch<{ payout: Payout }>(`/api/payouts/${payoutId}/status`, { status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payout", payoutId] });
+      // The timeline gains an entry with every move.
+      qc.invalidateQueries({ queryKey: ["payout-timeline", payoutId] });
       qc.invalidateQueries({ queryKey: ["payouts"] });
     },
   });

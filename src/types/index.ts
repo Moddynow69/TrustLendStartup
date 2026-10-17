@@ -90,6 +90,8 @@ export interface Payout {
 export interface PayoutLog {
   id: string;
   status: string;
+  /** Who made the change; null for system entries (e.g. creation). */
+  updatedBy: string | null;
   timestamp: string;
 }
 
