@@ -21,7 +21,7 @@ src/
       admin/                 Admin lead overview
       admin/users/           Admin user management
     api/
-      auth/                  login, register, forgot-password, logout, me
+      auth/                  login, register, logout, me
       leads/                 CRUD, verification-status, status, timeline
       payouts/               list/get, process, status, timeline
       admin/                 leads, users
@@ -93,4 +93,4 @@ Every subsequent API request is authenticated by verifying that session cookie s
 
 - The login rate limiter (`lib/auth/rate-limit.ts`) is in-memory, which is fine for a single Vercel instance but won't share state across concurrently-scaled serverless functions — swap in Upstash/Redis before you need real brute-force protection at scale.
 - `search` on the leads list does a Firestore prefix match on `customerName`; there's no full-text search. Pair with Algolia/Typesense if you need fuzzy search.
-- Password reset emails are generated via `adminAuth.generatePasswordResetLink` but not actually delivered — plug in your transactional email provider where the `TODO` is in `app/api/auth/forgot-password/route.ts`.
+- There is no self-service password reset: users who forget their password ask an admin, who sets a new one in `/admin/users` → Manage user. (Username-only accounts have no real inbox, so email-based reset can't cover them anyway.)

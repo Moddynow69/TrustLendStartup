@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "lb_session";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/forgot-password"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 
 /**
  * Lightweight edge check: presence of the session cookie only. Full
