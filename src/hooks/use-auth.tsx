@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
 import { clientAuth } from "@/lib/firebase/client";
 import { api, ApiClientError } from "@/lib/api-client";
@@ -28,6 +29,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const refresh = useCallback(async () => {
     try {
@@ -63,8 +65,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       idToken,
       identifier,
     });
+    // Query keys aren't scoped by user, so drop anything cached under a
+    // previous session (including one that expired without a logout)
+    // before the new user's pages read from the cache.
+    queryClient.clear();
     setUser(user);
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(async () => {
     await api.post("/api/auth/logout");
@@ -74,7 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // best-effort; server session is already cleared
     }
     setUser(null);
-  }, []);
+    // Don't leave this user's leads/payouts/users in memory for whoever
+    // signs in next on the same tab.
+    queryClient.clear();
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
