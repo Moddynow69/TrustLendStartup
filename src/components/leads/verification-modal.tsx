@@ -6,6 +6,9 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useSetVerificationStatus } from "@/hooks/use-leads";
 import { ApiClientError } from "@/lib/api-client";
+import { allowedVerificationColors, verificationRejectsLead } from "@/lib/business/verification";
+import { STATUS_LABELS } from "@/lib/business/status-flow";
+import type { LeadStatus } from "@/types";
 import { clsx } from "clsx";
 
 const OPTIONS = [
@@ -16,10 +19,12 @@ const OPTIONS = [
 
 export function VerificationModal({
   leadId,
+  leadStatus,
   open,
   onClose,
 }: {
   leadId: string;
+  leadStatus: LeadStatus;
   open: boolean;
   onClose: () => void;
 }) {
@@ -27,11 +32,17 @@ export function VerificationModal({
   const [note, setNote] = useState("");
   const mutation = useSetVerificationStatus(leadId);
 
+  const allowed = allowedVerificationColors(leadStatus);
+  const options = OPTIONS.filter((opt) => allowed.includes(opt.value));
+  // RED on a lead already in the lender stages rejects it, so a reason is required.
+  const rejects = selected != null && verificationRejectsLead(leadStatus, selected);
+  const missingReason = rejects && !note.trim();
+
   async function handleSubmit() {
-    if (!selected) return;
+    if (!selected || missingReason) return;
     try {
-      await mutation.mutateAsync({ verificationStatus: selected, note: note || undefined });
-      toast.success("Verification status updated");
+      await mutation.mutateAsync({ verificationStatus: selected, note: note.trim() || undefined });
+      toast.success(rejects ? "Lead rejected" : "Verification status updated");
       setSelected(null);
       setNote("");
       onClose();
@@ -43,7 +54,7 @@ export function VerificationModal({
   return (
     <Modal open={open} onClose={onClose} title="Set verification status">
       <div className="space-y-3">
-        {OPTIONS.map((opt) => (
+        {options.map((opt) => (
           <button
             key={opt.value}
             type="button"
@@ -61,10 +72,17 @@ export function VerificationModal({
           </button>
         ))}
 
+        {rejects && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-status-red">
+            This lead is at {STATUS_LABELS[leadStatus] ?? leadStatus}. Setting it to Red rejects it, and a
+            rejected lead can&apos;t be reopened.
+          </p>
+        )}
+
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Optional note"
+          placeholder={rejects ? "Reason for rejection (required)" : "Optional note"}
           rows={2}
           className="focus-ring mt-2 w-full rounded-lg border border-ink-100 px-3 py-2 text-sm placeholder:text-ink-300"
         />
@@ -74,8 +92,13 @@ export function VerificationModal({
         <Button variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} loading={mutation.isPending} disabled={!selected}>
-          Save
+        <Button
+          variant={rejects ? "danger" : "primary"}
+          onClick={handleSubmit}
+          loading={mutation.isPending}
+          disabled={!selected || missingReason}
+        >
+          {rejects ? "Reject lead" : "Save"}
         </Button>
       </div>
     </Modal>

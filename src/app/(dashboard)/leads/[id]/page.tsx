@@ -15,6 +15,7 @@ import { useLead, useLeadTimeline } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { canSetVerificationStatus, canUpdateCaseStatus } from "@/lib/business/permissions";
 import { PAYOUT_PLANS, PERSONALIZED_PLAN } from "@/lib/business/payout-plans";
+import { allowedVerificationColors } from "@/lib/business/verification";
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,7 +35,9 @@ export default function LeadDetailPage() {
   }
 
   const lead = data.lead;
-  const canVerify = user && canSetVerificationStatus(user.role);
+  // Closed (DISBURSED/REJECTED) leads have no verification changes left.
+  const canVerify =
+    user && canSetVerificationStatus(user.role) && allowedVerificationColors(lead.status).length > 0;
   const canProgress = user && canUpdateCaseStatus(user.role) && lead.verificationStatus === "GREEN";
 
   return (
@@ -100,7 +103,12 @@ export default function LeadDetailPage() {
       </div>
 
       {canVerify && (
-        <VerificationModal leadId={lead.id} open={verifyOpen} onClose={() => setVerifyOpen(false)} />
+        <VerificationModal
+          leadId={lead.id}
+          leadStatus={lead.status}
+          open={verifyOpen}
+          onClose={() => setVerifyOpen(false)}
+        />
       )}
       {canProgress && (
         <StatusUpdateModal
