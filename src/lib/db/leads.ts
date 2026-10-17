@@ -2,7 +2,8 @@ import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType, PayoutPlan } from "@/types";
 import { NotFoundError, BadRequestError } from "@/lib/api-response";
-import { getInitialStatus, isValidTransition } from "@/lib/business/status-flow";
+import { getInitialStatus, isValidTransition, STATUS_LABELS } from "@/lib/business/status-flow";
+import { allowedVerificationColors, verificationRejectsLead } from "@/lib/business/verification";
 import { createPayoutInTransaction, readAdminShareInTransaction } from "@/lib/db/payouts";
 
 function serializeLead(id: string, data: FirebaseFirestore.DocumentData): Lead {
@@ -118,6 +119,16 @@ export async function listLeads(user: UserProfile, filters: LeadFilters) {
   return { items, nextCursor };
 }
 
+/**
+ * Sets a lead's verification colour, in one transaction so the rule check
+ * and the write can't interleave with an Admin moving the lead's status.
+ * Rules (see lib/business/verification.ts):
+ *  - LEAD_SUBMITTED: any colour; GREEN starts the case-type flow.
+ *  - In the stage flow: RED rejects the lead (status -> REJECTED, `note`
+ *    required as the rejection reason); GREEN is allowed to restore a lead;
+ *    YELLOW is refused.
+ *  - DISBURSED / REJECTED: refused — the lead is closed.
+ */
 export async function setVerificationStatus(
   leadId: string,
   verificationStatus: "RED" | "YELLOW" | "GREEN",
@@ -125,29 +136,62 @@ export async function setVerificationStatus(
   note?: string
 ): Promise<Lead> {
   const ref = adminDb.collection(COLLECTIONS.leads).doc(leadId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new NotFoundError("Lead not found");
-  const lead = serializeLead(snap.id, snap.data()!);
 
-  const now = FieldValue.serverTimestamp();
-  const updates: Record<string, unknown> = {
-    verificationStatus,
-    verifiedBy,
-    updatedAt: now,
-  };
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new NotFoundError("Lead not found");
+    const lead = serializeLead(snap.id, snap.data()!);
+    const statusLabel = STATUS_LABELS[lead.status] ?? lead.status;
 
-  // GREEN unlocks the case-type flow; the lead's status advances to that
-  // flow's first stage (Section 5.1). RED/YELLOW leave `status` untouched.
-  if (verificationStatus === "GREEN" && lead.status === "LEAD_SUBMITTED") {
-    updates.status = getInitialStatus(lead.caseType);
-  }
+    if (!allowedVerificationColors(lead.status).includes(verificationStatus)) {
+      throw new BadRequestError(
+        lead.status === "DISBURSED" || lead.status === "REJECTED"
+          ? `This lead is closed (${statusLabel}), so its verification can't be changed.`
+          : `A lead already in the lender stages (${statusLabel}) can't be marked Docs pending. ` +
+              "Set it to Red to reject it instead."
+      );
+    }
 
-  await ref.update(updates);
-  await ref.collection("logs").add({
-    status: `VERIFICATION_${verificationStatus}`,
-    note: note || `Verification set to ${verificationStatus}`,
-    updatedBy: verifiedBy,
-    timestamp: now,
+    const rejects = verificationRejectsLead(lead.status, verificationStatus);
+    const reason = note?.trim();
+    if (rejects && !reason) {
+      throw new BadRequestError(
+        `Setting Red on a lead at ${statusLabel} rejects it. Enter the reason for rejection.`
+      );
+    }
+
+    const now = FieldValue.serverTimestamp();
+    const updates: FirebaseFirestore.DocumentData = {
+      verificationStatus,
+      verifiedBy,
+      updatedAt: now,
+    };
+
+    // GREEN unlocks the case-type flow; the lead's status advances to that
+    // flow's first stage (Section 5.1).
+    if (verificationStatus === "GREEN" && lead.status === "LEAD_SUBMITTED") {
+      updates.status = getInitialStatus(lead.caseType);
+    }
+    if (rejects) {
+      updates.status = "REJECTED";
+      updates.rejectionReason = reason;
+    }
+
+    tx.update(ref, updates);
+    tx.set(ref.collection("logs").doc(), {
+      status: `VERIFICATION_${verificationStatus}`,
+      note: note || `Verification set to ${verificationStatus}`,
+      updatedBy: verifiedBy,
+      timestamp: now,
+    });
+    if (rejects) {
+      tx.set(ref.collection("logs").doc(), {
+        status: "REJECTED",
+        note: `Rejected at verification (was ${statusLabel}): ${reason}`,
+        updatedBy: verifiedBy,
+        timestamp: now,
+      });
+    }
   });
 
   const updatedSnap = await ref.get();
