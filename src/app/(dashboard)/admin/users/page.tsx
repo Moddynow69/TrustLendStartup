@@ -15,7 +15,10 @@ import { clsx } from "clsx";
 export default function AdminUsersPage() {
   const { data, isLoading } = useUsers();
   const [createOpen, setCreateOpen] = useState(false);
-  const [selected, setSelected] = useState<UserProfile | null>(null);
+  // Track the id, not a copy of the user, so the modal always reads the
+  // latest record from the users query (it refetches after every update).
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = data?.users.find((u) => u.id === selectedId) ?? null;
 
   const columns: Column<UserProfile>[] = [
     { header: "Name", accessor: (u) => <span className="font-medium text-ink-900">{u.name}</span> },
@@ -54,12 +57,16 @@ export default function AdminUsersPage() {
         data={data?.users ?? []}
         loading={isLoading}
         keyExtractor={(u) => u.id}
-        onRowClick={(u) => setSelected(u)}
+        onRowClick={(u) => setSelectedId(u.id)}
         emptyMessage="No accounts yet."
       />
 
       <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      <ManageUserModal user={selected} open={!!selected} onClose={() => setSelected(null)} />
+      {selected && (
+        // Keyed by user so its form state (role, rate) is initialised from
+        // the user being opened, not whichever user it first mounted with.
+        <ManageUserModal key={selected.id} user={selected} open onClose={() => setSelectedId(null)} />
+      )}
     </div>
   );
 }

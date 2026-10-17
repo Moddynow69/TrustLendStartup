@@ -22,11 +22,12 @@ function buildQuery(filters: LeadFiltersInput): string {
   return qs ? `?${qs}` : "";
 }
 
-export function useLeads(filters: LeadFiltersInput = {}, adminScope = false) {
-  const base = adminScope ? "/api/admin/leads" : "/api/leads";
+/** The server scopes results by role: DSA/PARTNER get their own leads,
+ * OPERATIONS/ADMIN get all leads. */
+export function useLeads(filters: LeadFiltersInput = {}) {
   return useQuery({
-    queryKey: ["leads", adminScope, filters],
-    queryFn: () => api.get<PaginatedResult<Lead>>(`${base}${buildQuery(filters)}`),
+    queryKey: ["leads", filters],
+    queryFn: () => api.get<PaginatedResult<Lead>>(`/api/leads${buildQuery(filters)}`),
   });
 }
 

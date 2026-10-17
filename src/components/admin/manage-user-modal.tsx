@@ -14,20 +14,18 @@ export function ManageUserModal({
   open,
   onClose,
 }: {
-  user: UserProfile | null;
+  user: UserProfile;
   open: boolean;
   onClose: () => void;
 }) {
-  const [role, setRole] = useState<Role>(user?.role ?? "PARTNER");
+  const [role, setRole] = useState<Role>(user.role);
   const [newPassword, setNewPassword] = useState("");
   const [personalizedRate, setPersonalizedRate] = useState(
-    user?.personalizedPayoutRate != null ? String(Math.round(user.personalizedPayoutRate * 100)) : ""
+    user.personalizedPayoutRate != null ? String(Math.round(user.personalizedPayoutRate * 100)) : ""
   );
   const [rateError, setRateError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const updateUser = useUpdateUser(user?.id ?? "");
-
-  if (!user) return null;
+  const updateUser = useUpdateUser(user.id);
 
   async function handleSavePersonalizedRate() {
     setRateError(null);
@@ -56,8 +54,8 @@ export function ManageUserModal({
 
   async function handleToggleActive() {
     try {
-      await updateUser.mutateAsync({ isActive: !user!.isActive });
-      toast.success(user!.isActive ? "Account disabled" : "Account re-enabled");
+      await updateUser.mutateAsync({ isActive: !user.isActive });
+      toast.success(user.isActive ? "Account disabled" : "Account re-enabled");
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "Failed to update account");
     }

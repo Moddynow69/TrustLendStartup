@@ -18,9 +18,7 @@ import { format } from "date-fns";
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const isAdminScope = user?.role === "ADMIN" || user?.role === "OPERATIONS";
-
-  const { data: leadsData, isLoading: leadsLoading } = useLeads({ limit: 100 }, isAdminScope);
+  const { data: leadsData, isLoading: leadsLoading } = useLeads({ limit: 100 });
   const { data: payoutsData, isLoading: payoutsLoading } = usePayouts({ limit: 100 });
 
   const stats = useMemo(() => {

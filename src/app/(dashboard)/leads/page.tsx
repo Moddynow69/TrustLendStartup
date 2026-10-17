@@ -12,7 +12,7 @@ import { LeadFilterBar } from "@/components/leads/lead-filter-bar";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { useLeads } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
-import { canCreateLead, canViewAllLeads } from "@/lib/business/permissions";
+import { canCreateLead } from "@/lib/business/permissions";
 import type { Lead } from "@/types";
 import { format } from "date-fns";
 
@@ -39,11 +39,7 @@ export default function LeadsPage() {
   const [status, setStatus] = useState("");
   const [cursor, setCursor] = useState<string | undefined>(undefined);
 
-  const adminScope = !!user && canViewAllLeads(user.role);
-  const { data, isLoading } = useLeads(
-    { search, verificationStatus, caseType, status, cursor, limit: 20 },
-    adminScope
-  );
+  const { data, isLoading } = useLeads({ search, verificationStatus, caseType, status, cursor, limit: 20 });
 
   const columns: Column<Lead>[] = [
     { header: "Customer", accessor: (l) => <span className="font-medium text-ink-900">{l.customerName}</span> },
