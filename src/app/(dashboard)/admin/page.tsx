@@ -31,10 +31,7 @@ export default function AdminPage() {
   const [caseType, setCaseType] = useState("");
   const [status, setStatus] = useState("");
 
-  const { data, isLoading } = useLeads(
-    { search, verificationStatus, caseType, status, limit: 50 },
-    true
-  );
+  const { data, isLoading } = useLeads({ search, verificationStatus, caseType, status, limit: 50 });
 
   const columns: Column<Lead>[] = [
     { header: "Customer", accessor: (l) => <span className="font-medium text-ink-900">{l.customerName}</span> },
