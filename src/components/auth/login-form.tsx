@@ -37,7 +37,7 @@ export function LoginForm() {
       router.push("/dashboard");
     } catch (err) {
       const message =
-        err instanceof ApiClientError && err.status === 403
+        err instanceof ApiClientError && (err.status === 403 || err.status === 429)
           ? err.message
           : "Invalid credentials. Check your email/username and password.";
       setErrors({ form: message });

@@ -46,7 +46,7 @@ firestore.indexes.json       Composite indexes required by the filter queries
 1. `npm install`
 2. Create a Firebase project → enable **Authentication → Email/Password** and **Firestore**.
 3. Copy `.env.example` to `.env.local` and fill in:
-   - The web app config (`NEXT_PUBLIC_FIREBASE_*`) from Project Settings → General.
+   - `FIREBASE_WEB_API_KEY`: a Web API key used **only on the server** to verify passwords. Create a dedicated one in Google Cloud Console → APIs & Services → Credentials, restricted to the Identity Toolkit API, and never expose it to the browser (no `NEXT_PUBLIC_` prefix).
    - A service account key (`FIREBASE_ADMIN_*`) from Project Settings → Service Accounts → Generate new private key.
 4. Deploy Firestore rules/indexes: `firebase deploy --only firestore`
 5. Bootstrap your first Admin account directly via the Firebase Console (Authentication tab → Add user), then manually add the matching Firestore doc at `users/{uid}` with `role: "ADMIN"`, `isActive: true`. Every other account is provisioned from the app afterward via `/admin/users`.
@@ -70,11 +70,14 @@ This means `FIREBASE_ADMIN_PRIVATE_KEY` isn't reaching the SDK as valid PEM text
 
 ## How authentication works
 
-Firebase Auth's Admin SDK can create/manage users but cannot verify a password directly, so login is a 3-step exchange, all orchestrated by `useAuth().login()`:
+The browser posts `{ identifier, password }` once to `POST /api/auth/login`, which does everything server-side:
 
-1. Client posts the typed identifier (email or username) to `POST /api/auth/login` → server resolves it to the real Firebase Auth email (looking up Firestore for username accounts).
-2. Client calls `signInWithEmailAndPassword` against the **Firebase JS SDK** directly — this is the step that actually checks the password — and gets an ID token.
-3. Client posts that ID token back to `POST /api/auth/login` → server verifies it via the Admin SDK and mints a secure, http-only session cookie.
+1. Checks the failed-attempt limits (`lib/auth/rate-limit.ts`): 5 per account and 20 per IP per 15 minutes. Over the limit returns 429 before the password is tested.
+2. Resolves the identifier (email or username) to the Firebase Auth email, looking up Firestore for username accounts.
+3. Verifies the password with Firebase Auth's REST API (`lib/auth/password-sign-in.ts`, using the server-only `FIREBASE_WEB_API_KEY`) and gets an ID token.
+4. Exchanges the ID token for a secure, http-only session cookie.
+
+Unknown usernames, wrong passwords and disabled accounts all return the same 401, so login can't be used to discover which accounts exist. The browser never loads the Firebase SDK and never sees an API key, so the only way to test a password is through this rate-limited route, provided the old public browser key is restricted (see the note in setup).
 
 Every subsequent API request is authenticated by verifying that session cookie server-side (`requireUser` / `requireRole` in `lib/auth/session.ts`), never by trusting anything the client sends about who it is.
 
@@ -91,6 +94,6 @@ Every subsequent API request is authenticated by verifying that session cookie s
 
 ## Known MVP simplifications (documented, not hidden)
 
-- The login rate limiter (`lib/auth/rate-limit.ts`) is in-memory, which is fine for a single Vercel instance but won't share state across concurrently-scaled serverless functions — swap in Upstash/Redis before you need real brute-force protection at scale.
+- The login rate limiter (`lib/auth/rate-limit.ts`) keeps counts in each server instance's memory, so on Vercel the limits apply per warm instance rather than globally (Firebase Auth's own throttling still applies on top). Move it to a shared store such as Upstash Redis if you need exact global limits.
 - `search` on the leads list does a Firestore prefix match on `customerName`; there's no full-text search. Pair with Algolia/Typesense if you need fuzzy search.
 - There is no self-service password reset: users who forget their password ask an admin, who sets a new one in `/admin/users` → Manage user. (Username-only accounts have no real inbox, so email-based reset can't cover them anyway.)
