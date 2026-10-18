@@ -95,6 +95,17 @@ export interface PayoutLog {
   timestamp: string;
 }
 
+/** Role-scoped counts shown on the dashboard (GET /api/dashboard). */
+export interface DashboardStats {
+  totalLeads: number;
+  red: number;
+  yellow: number;
+  green: number;
+  disbursed: number;
+  rejected: number;
+  pendingPayouts: number;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   nextCursor: string | null;

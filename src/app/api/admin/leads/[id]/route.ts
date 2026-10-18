@@ -30,16 +30,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const { note, ...fields } = body;
     const ref = adminDb.collection(COLLECTIONS.leads).doc(params.id);
-    await ref.update({ ...fields, updatedAt: FieldValue.serverTimestamp() });
+    const now = FieldValue.serverTimestamp();
 
+    // One batch, so the edit and its timeline note are saved together.
+    const batch = adminDb.batch();
+    batch.update(ref, { ...fields, updatedAt: now });
     if (note) {
-      await ref.collection("logs").add({
+      batch.set(ref.collection("logs").doc(), {
         status: "ADMIN_NOTE",
         note,
         updatedBy: admin.id,
-        timestamp: FieldValue.serverTimestamp(),
+        timestamp: now,
       });
     }
+    await batch.commit();
 
     const updated = await getLeadById(params.id);
     return NextResponse.json({ lead: updated });
