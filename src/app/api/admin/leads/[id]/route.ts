@@ -6,8 +6,8 @@ import { handleApiError } from "@/lib/api-response";
 import { z } from "zod";
 import { isRegisteredLender } from "@/lib/lenders";
 
+// Reassignment goes through PATCH /api/leads/[id]/assignee, which validates it.
 const adminLeadUpdateSchema = z.object({
-  assignedTo: z.string().min(1).optional(),
   bank: z
     .string()
     .min(2)
@@ -18,9 +18,9 @@ const adminLeadUpdateSchema = z.object({
 });
 
 /**
- * Admin-only edit of non-status lead fields (e.g. reassigning ownership,
- * correcting bank/product data). Status and verificationStatus transitions
- * go through their dedicated, rule-validated endpoints instead.
+ * Admin-only correction of lead data (bank, product type). Status,
+ * verification and assignee changes go through their dedicated,
+ * rule-validated endpoints instead.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {

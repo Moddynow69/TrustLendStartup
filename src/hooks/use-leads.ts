@@ -35,7 +35,10 @@ export function useLeads(filters: LeadFiltersInput = {}) {
 export function useLead(id: string | undefined) {
   return useQuery({
     queryKey: ["lead", id],
-    queryFn: () => api.get<{ lead: Lead }>(`/api/leads/${id}`),
+    queryFn: () =>
+      api.get<{ lead: Lead; people: { createdByName: string | null; assignedToName: string | null } }>(
+        `/api/leads/${id}`
+      ),
     enabled: !!id,
   });
 }
@@ -57,7 +60,6 @@ export function useCreateLead() {
       amount: number;
       bank: string;
       caseType: "SECURED" | "UNSECURED";
-      assignedTo: string;
       selectedPlan: "50-50" | "70-30" | "90-10" | "PERSONALIZED";
     }) => api.post<{ lead: Lead }>("/api/leads", input),
     onSuccess: () => {
@@ -97,6 +99,21 @@ export function useUpdateLeadStatus(leadId: string) {
       qc.invalidateQueries({ queryKey: ["lead-timeline", leadId] });
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["payouts"] });
+      qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+    },
+  });
+}
+
+/** Admin-only: hand a lead to another DSA/PARTNER. */
+export function useReassignLead(leadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { assignedTo: string; note?: string }) =>
+      api.patch<{ lead: Lead }>(`/api/leads/${leadId}/assignee`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", leadId] });
+      qc.invalidateQueries({ queryKey: ["lead-timeline", leadId] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });

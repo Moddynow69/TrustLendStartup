@@ -1,8 +1,10 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
+import { Filter } from "firebase-admin/firestore";
+import { canViewAllLeads } from "@/lib/business/permissions";
 import type { Lead, LeadLog, LeadStatus, UserProfile, VerificationStatus, CaseType, PayoutPlan } from "@/types";
 import { NotFoundError, BadRequestError } from "@/lib/api-response";
-import { getInitialStatus, isValidTransition, STATUS_LABELS } from "@/lib/business/status-flow";
+import { getInitialStatus, isTerminalStatus, isValidTransition, STATUS_LABELS } from "@/lib/business/status-flow";
 import { allowedVerificationColors, verificationRejectsLead } from "@/lib/business/verification";
 import { createPayoutInTransaction, readAdminShareInTransaction } from "@/lib/db/payouts";
 
@@ -26,13 +28,13 @@ function serializeLead(id: string, data: FirebaseFirestore.DocumentData): Lead {
   };
 }
 
+/** New leads are assigned to their creator; an Admin can reassign later. */
 export async function createLead(input: {
   customerName: string;
   productType: string;
   amount: number;
   bank: string;
   caseType: CaseType;
-  assignedTo: string;
   createdBy: string;
   selectedPlan: PayoutPlan;
 }): Promise<Lead> {
@@ -43,6 +45,7 @@ export async function createLead(input: {
   const batch = adminDb.batch();
   batch.set(ref, {
     ...input,
+    assignedTo: input.createdBy,
     verificationStatus: null,
     status: "LEAD_SUBMITTED",
     rejectionReason: null,
@@ -68,6 +71,11 @@ export async function getLeadById(leadId: string): Promise<Lead> {
   return serializeLead(snap.id, snap.data()!);
 }
 
+/** Leads a DSA/PARTNER can see: ones they created or are assigned to. */
+export function mineFilter(userId: string) {
+  return Filter.or(Filter.where("createdBy", "==", userId), Filter.where("assignedTo", "==", userId));
+}
+
 export interface LeadFilters {
   verificationStatus?: VerificationStatus;
   status?: string;
@@ -79,7 +87,7 @@ export interface LeadFilters {
 
 /**
  * Lists leads scoped by the requesting user's role:
- *  - DSA/PARTNER only ever see leads they created (Section 5.4)
+ *  - DSA/PARTNER see leads they created or are assigned to (Section 5.4)
  *  - OPERATIONS/ADMIN see all leads, filterable
  * `search` does a simple prefix match on customerName (Firestore has no
  * full-text search; for production-scale search, pair with Algolia/Typesense).
@@ -87,8 +95,8 @@ export interface LeadFilters {
 export async function listLeads(user: UserProfile, filters: LeadFilters) {
   let query: FirebaseFirestore.Query = adminDb.collection(COLLECTIONS.leads);
 
-  if (user.role === "DSA" || user.role === "PARTNER") {
-    query = query.where("createdBy", "==", user.id);
+  if (!canViewAllLeads(user.role)) {
+    query = query.where(mineFilter(user.id));
   }
   if (filters.verificationStatus) {
     query = query.where("verificationStatus", "==", filters.verificationStatus);
@@ -243,12 +251,18 @@ export async function transitionLeadStatus(
       if (commissionRate == null) {
         throw new BadRequestError("Enter the lender's commission rate to disburse this lead");
       }
-      const adminShare = await readAdminShareInTransaction(tx, lead);
+      // The lead's current assignee is paid (and their personalized rate applies).
+      const payeeId = lead.assignedTo ?? lead.createdBy;
+      const adminShare = await readAdminShareInTransaction(tx, {
+        selectedPlan: lead.selectedPlan,
+        payeeId,
+      });
       // Payout before the lead writes: its duplicate check is the last read,
       // and it throws before any write is staged.
       await createPayoutInTransaction(tx, {
         leadId,
         createdBy: lead.createdBy,
+        payeeId,
         amount: lead.amount,
         commissionRate,
         adminShare,
@@ -271,6 +285,78 @@ export async function transitionLeadStatus(
 
   const updatedSnap = await ref.get();
   return serializeLead(updatedSnap.id, updatedSnap.data()!);
+}
+
+/**
+ * Reassigns a lead to another DSA/PARTNER (Admin only). The new assignee
+ * sees the lead alongside its creator, and is paid if it's disbursed while
+ * assigned to them. Checked and written in one transaction:
+ *  - the lead must still be open (not DISBURSED/REJECTED)
+ *  - the assignee must be an active DSA or PARTNER
+ *  - on the PERSONALIZED plan, the assignee needs a personalized rate,
+ *    or disbursal would fail later
+ */
+export async function reassignLead(
+  leadId: string,
+  assigneeId: string,
+  updatedBy: string,
+  note?: string
+): Promise<Lead> {
+  const ref = adminDb.collection(COLLECTIONS.leads).doc(leadId);
+
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new NotFoundError("Lead not found");
+    const lead = serializeLead(snap.id, snap.data()!);
+
+    if (isTerminalStatus(lead.status)) {
+      throw new BadRequestError(
+        `This lead is closed (${STATUS_LABELS[lead.status] ?? lead.status}), so it can't be reassigned.`
+      );
+    }
+    if (lead.assignedTo === assigneeId) {
+      throw new BadRequestError("This lead is already assigned to that person.");
+    }
+
+    const users = adminDb.collection(COLLECTIONS.users);
+    const [toSnap, fromSnap] = await tx.getAll(users.doc(assigneeId), users.doc(lead.assignedTo));
+    if (!toSnap.exists) throw new NotFoundError("User not found");
+    const to = toSnap.data()!;
+    if (to.role !== "DSA" && to.role !== "PARTNER") {
+      throw new BadRequestError("Leads can only be assigned to DSA or Partner accounts.");
+    }
+    if (!to.isActive) {
+      throw new BadRequestError(`${to.name}'s account is disabled.`);
+    }
+    if (lead.selectedPlan === "PERSONALIZED" && typeof to.personalizedPayoutRate !== "number") {
+      throw new BadRequestError(
+        `This lead uses the Personalized plan, and ${to.name} has no personalized rate. ` +
+          "Set one in User Management first."
+      );
+    }
+
+    const fromName = fromSnap.exists ? fromSnap.data()!.name : "an unknown user";
+    const now = FieldValue.serverTimestamp();
+    tx.update(ref, { assignedTo: assigneeId, updatedAt: now });
+    tx.set(ref.collection("logs").doc(), {
+      status: "REASSIGNED",
+      note: `Reassigned from ${fromName} to ${to.name}${note?.trim() ? `: ${note.trim()}` : ""}`,
+      updatedBy,
+      timestamp: now,
+    });
+  });
+
+  return getLeadById(leadId);
+}
+
+/** Display names for a lead's creator and assignee (null if the user is gone). */
+export async function getLeadPeople(lead: Pick<Lead, "createdBy" | "assignedTo">) {
+  const users = adminDb.collection(COLLECTIONS.users);
+  const [creator, assignee] = await adminDb.getAll(users.doc(lead.createdBy), users.doc(lead.assignedTo));
+  return {
+    createdByName: creator.exists ? (creator.data()!.name as string) : null,
+    assignedToName: assignee.exists ? (assignee.data()!.name as string) : null,
+  };
 }
 
 export async function getLeadTimeline(leadId: string): Promise<LeadLog[]> {

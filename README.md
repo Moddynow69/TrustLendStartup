@@ -86,8 +86,10 @@ Every subsequent API request is authenticated by verifying that session cookie s
   - `commissionAmount = amount × commissionRate`
   - `payoutRate = 1 − adminShare` (e.g. 0.3 on the 70-30 plan)
   - `payoutAmount = commissionAmount × payoutRate`
-- Every lead is created with a **payout rate plan** (`lib/business/payout-plans.ts`): `50-50`, `70-30`, `90-10`, or `PERSONALIZED`. The plan rate is the admin's share of the commission, reflecting how much processing work the admin takes on; the DSA/PARTNER gets the rest. `PERSONALIZED` resolves at disbursal time from the lead creator's `personalizedPayoutRate` (also an admin share) on their user profile, which only an admin can set (`/admin/users` → Manage user). A lead's plan is fixed once submitted; each plan option links out to its own terms page at `/terms/<plan>`.
+- Every lead is created with a **payout rate plan** (`lib/business/payout-plans.ts`): `50-50`, `70-30`, `90-10`, or `PERSONALIZED`. The plan rate is the admin's share of the commission, reflecting how much processing work the admin takes on; the DSA/PARTNER gets the rest. `PERSONALIZED` resolves at disbursal time from the `personalizedPayoutRate` (also an admin share) of the lead's assignee, which only an admin can set (`/admin/users` → Manage user). A lead's plan is fixed once submitted; each plan option links out to its own terms page at `/terms/<plan>`.
 - Role checks (`lib/business/permissions.ts`) gate every mutating endpoint: only OPERATIONS/ADMIN can set verification status; only ADMIN can progress case-type stages, process payouts, or manage users; DSA/PARTNER can only see their own leads and payouts.
+- **Lead ownership:** a new lead is assigned to its creator. Only an ADMIN can reassign it (`PATCH /api/leads/[id]/assignee`), and only to an active DSA/PARTNER while the lead is still open; on the `PERSONALIZED` plan the new assignee must have a personalized rate. DSA/PARTNER see leads they created **or** are assigned to. When a lead is disbursed, its **current assignee** is paid (`payeeId` on the payout) and sees the payout; the creator, if different, does not.
+- **Payout visibility:** DSA/PARTNER see payouts paid to them; OPERATIONS can view all payouts read-only; only ADMIN can change a payout's status.
 
 ## Known MVP simplifications (documented, not hidden)
 
