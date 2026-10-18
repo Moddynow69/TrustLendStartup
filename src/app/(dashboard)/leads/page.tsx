@@ -11,6 +11,7 @@ import { LeadStatusBadge } from "@/components/leads/status-badge";
 import { LeadFilterBar } from "@/components/leads/lead-filter-bar";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { useLeads } from "@/hooks/use-leads";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useAuth } from "@/hooks/use-auth";
 import { canCreateLead } from "@/lib/business/permissions";
 import type { Lead } from "@/types";
@@ -37,9 +38,22 @@ export default function LeadsPage() {
   const [verificationStatus, setVerificationStatus] = useState("");
   const [caseType, setCaseType] = useState("");
   const [status, setStatus] = useState("");
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  // Cursor of each page after the first that we've moved to, so "Previous"
+  // can step back one page. Empty = page 1.
+  const [pageCursors, setPageCursors] = useState<string[]>([]);
+  const cursor = pageCursors[pageCursors.length - 1];
+  const resetPaging = () => setPageCursors([]);
 
-  const { data, isLoading } = useLeads({ search, verificationStatus, caseType, status, cursor, limit: 20 });
+  // Query once typing pauses, not on every keystroke.
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const { data, isLoading, isFetching } = useLeads({
+    search: debouncedSearch,
+    verificationStatus,
+    caseType,
+    status,
+    cursor,
+    limit: 20,
+  });
 
   const columns: Column<Lead>[] = [
     { header: "Customer", accessor: (l) => <span className="font-medium text-ink-900">{l.customerName}</span> },
@@ -70,22 +84,22 @@ export default function LeadsPage() {
         search={search}
         onSearchChange={(v) => {
           setSearch(v);
-          setCursor(undefined);
+          resetPaging();
         }}
         verificationStatus={verificationStatus}
         onVerificationChange={(v) => {
           setVerificationStatus(v);
-          setCursor(undefined);
+          resetPaging();
         }}
         caseType={caseType}
         onCaseTypeChange={(v) => {
           setCaseType(v);
-          setCursor(undefined);
+          resetPaging();
         }}
         status={status}
         onStatusChange={(v) => {
           setStatus(v);
-          setCursor(undefined);
+          resetPaging();
         }}
         statusOptions={ALL_STATUSES}
       />
@@ -99,18 +113,24 @@ export default function LeadsPage() {
         emptyMessage="No leads match your filters."
       />
 
-      {(data?.nextCursor || cursor) && (
-        <div className="mt-4 flex justify-end gap-3">
-          <Button variant="secondary" size="sm" disabled={!cursor} onClick={() => setCursor(undefined)}>
-            Reset
+      {(data?.nextCursor || pageCursors.length > 0) && (
+        <div className="mt-4 flex items-center justify-end gap-3">
+          <span className="text-xs text-ink-400">Page {pageCursors.length + 1}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={pageCursors.length === 0 || isFetching}
+            onClick={() => setPageCursors((c) => c.slice(0, -1))}
+          >
+            Previous
           </Button>
           <Button
             variant="secondary"
             size="sm"
-            disabled={!data?.nextCursor}
-            onClick={() => setCursor(data?.nextCursor ?? undefined)}
+            disabled={!data?.nextCursor || isFetching}
+            onClick={() => data?.nextCursor && setPageCursors((c) => [...c, data.nextCursor!])}
           >
-            Next page
+            Next
           </Button>
         </div>
       )}
