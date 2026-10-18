@@ -39,7 +39,9 @@ export async function createLead(input: {
   const ref = adminDb.collection(COLLECTIONS.leads).doc();
   const now = FieldValue.serverTimestamp();
 
-  await ref.set({
+  // One batch, so a lead never exists without its "Lead created" entry.
+  const batch = adminDb.batch();
+  batch.set(ref, {
     ...input,
     verificationStatus: null,
     status: "LEAD_SUBMITTED",
@@ -48,13 +50,13 @@ export async function createLead(input: {
     createdAt: now,
     updatedAt: now,
   });
-
-  await ref.collection("logs").add({
+  batch.set(ref.collection("logs").doc(), {
     status: "LEAD_SUBMITTED",
     note: "Lead created",
     updatedBy: input.createdBy,
     timestamp: now,
   });
+  await batch.commit();
 
   const snap = await ref.get();
   return serializeLead(snap.id, snap.data()!);

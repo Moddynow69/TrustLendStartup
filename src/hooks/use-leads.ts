@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type { Lead, LeadLog, PaginatedResult } from "@/types";
+import { DASHBOARD_STATS_KEY } from "@/hooks/use-dashboard";
 
 export interface LeadFiltersInput {
   verificationStatus?: string;
@@ -59,7 +60,10 @@ export function useCreateLead() {
       assignedTo: string;
       selectedPlan: "50-50" | "70-30" | "90-10" | "PERSONALIZED";
     }) => api.post<{ lead: Lead }>("/api/leads", input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+    },
   });
 }
 
@@ -72,6 +76,7 @@ export function useSetVerificationStatus(leadId: string) {
       qc.invalidateQueries({ queryKey: ["lead", leadId] });
       qc.invalidateQueries({ queryKey: ["lead-timeline", leadId] });
       qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });
 }
@@ -92,6 +97,7 @@ export function useUpdateLeadStatus(leadId: string) {
       qc.invalidateQueries({ queryKey: ["lead-timeline", leadId] });
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["payouts"] });
+      qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });
 }

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type { Payout, PayoutLog, PaginatedResult } from "@/types";
+import { DASHBOARD_STATS_KEY } from "@/hooks/use-dashboard";
 
 export function usePayouts(filters: { status?: string; cursor?: string; limit?: number } = {}) {
   const params = new URLSearchParams();
@@ -41,6 +42,7 @@ export function useUpdatePayoutStatus(payoutId: string) {
       // The timeline gains an entry with every move.
       qc.invalidateQueries({ queryKey: ["payout-timeline", payoutId] });
       qc.invalidateQueries({ queryKey: ["payouts"] });
+      qc.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });
 }
