@@ -14,7 +14,6 @@ import type { PayoutPlan } from "@/types";
 
 export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
-  console.log("user", user);
   const createLead = useCreateLead();
 
   const [form, setForm] = useState({

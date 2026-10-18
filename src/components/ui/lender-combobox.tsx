@@ -14,7 +14,7 @@ interface LenderComboboxProps {
   hint?: string;
 }
 
-export function LenderCombobox({ label = "Bank / NBFC", value, onChange, error, hint }: LenderComboboxProps) {
+export function LenderCombobox({ label = "Bank / NBFC / ARC", value, onChange, error, hint }: LenderComboboxProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -88,7 +88,7 @@ export function LenderCombobox({ label = "Bank / NBFC", value, onChange, error, 
     <FieldWrapper
       label={label}
       error={error}
-      hint={hint ?? "Search RBI-registered NBFCs and ARCs (as of 30 Jun 2026)"}
+      hint={hint ?? "Search banks and RBI-registered NBFCs and ARCs (NBFC/ARC list as of 30 Jun 2026)"}
     >
       <div ref={rootRef} className="relative">
         <input
@@ -126,7 +126,7 @@ export function LenderCombobox({ label = "Bank / NBFC", value, onChange, error, 
               <li className="px-3.5 py-2 text-sm text-ink-400">Searching…</li>
             )}
             {!loading && items.length === 0 && (
-              <li className="px-3.5 py-2 text-sm text-ink-400">No matching NBFCs</li>
+              <li className="px-3.5 py-2 text-sm text-ink-400">No matching lenders</li>
             )}
             {items.map((name, index) => (
               <li key={name} role="option" aria-selected={index === highlight}>

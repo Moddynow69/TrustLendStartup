@@ -8,7 +8,7 @@ export const createLeadSchema = z.object({
   bank: z
     .string()
     .min(2, "Bank is required")
-    .refine(isRegisteredLender, "Select an RBI-registered NBFC or ARC from the list"),
+    .refine(isRegisteredLender, "Select a bank, NBFC or ARC from the list"),
   caseType: z.enum(["SECURED", "UNSECURED"]),
   assignedTo: z.string().min(1, "Assigned user is required"),
   selectedPlan: z.enum(["50-50", "70-30", "90-10", "PERSONALIZED"], {
