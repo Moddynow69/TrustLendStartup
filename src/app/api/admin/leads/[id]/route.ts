@@ -11,7 +11,7 @@ const adminLeadUpdateSchema = z.object({
   bank: z
     .string()
     .min(2)
-    .refine(isRegisteredLender, "Select an RBI-registered NBFC or ARC from the list")
+    .refine(isRegisteredLender, "Select a bank, NBFC or ARC from the list")
     .optional(),
   productType: z.string().min(2).optional(),
   note: z.string().optional(),

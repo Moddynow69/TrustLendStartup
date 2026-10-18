@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, CheckCircle2, Wallet, AlertCircle } from "lucide-react";
+import { FileText, CheckCircle2, Wallet, AlertCircle, XCircle } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -30,6 +30,7 @@ export default function DashboardPage() {
       yellow: leads.filter((l) => l.verificationStatus === "YELLOW").length,
       green: leads.filter((l) => l.verificationStatus === "GREEN").length,
       disbursed: leads.filter((l) => l.status === "DISBURSED").length,
+      rejected: leads.filter((l) => l.status === "REJECTED").length,
       pendingPayouts: payouts.filter((p) => p.status === "PENDING").length,
     };
   }, [leadsData, payoutsData]);
@@ -57,7 +58,7 @@ export default function DashboardPage() {
             <DashboardCard label="Total leads" value={stats.total} icon={FileText} accent="brand" />
             <DashboardCard label="Disbursed" value={stats.disbursed} icon={CheckCircle2} accent="green" />
             <DashboardCard label="Pending payouts" value={stats.pendingPayouts} icon={Wallet} accent="yellow" />
-            <DashboardCard label="Docs pending" value={stats.yellow} icon={AlertCircle} accent="yellow" />
+            <DashboardCard label="Rejected" value={stats.rejected} icon={XCircle} accent="red" />
           </>
         )}
       </div>
