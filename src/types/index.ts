@@ -78,6 +78,8 @@ export interface LeadLog {
 export interface Payout {
   id: string;
   leadId: string;
+  /** The DSA/PARTNER being paid: the lead's assignee when it was disbursed. */
+  payeeId: string | null;
   /** null on payouts created before commission-based payouts existed. */
   commissionRate: number | null;
   commissionAmount: number | null;

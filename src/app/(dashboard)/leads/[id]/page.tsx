@@ -11,9 +11,11 @@ import { LeadStatusBadge } from "@/components/leads/status-badge";
 import { LeadTimeline } from "@/components/leads/lead-timeline";
 import { VerificationModal } from "@/components/leads/verification-modal";
 import { StatusUpdateModal } from "@/components/leads/status-update-modal";
+import { ReassignLeadModal } from "@/components/leads/reassign-lead-modal";
 import { useLead, useLeadTimeline } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
-import { canSetVerificationStatus, canUpdateCaseStatus } from "@/lib/business/permissions";
+import { canReassignLead, canSetVerificationStatus, canUpdateCaseStatus } from "@/lib/business/permissions";
+import { isTerminalStatus } from "@/lib/business/status-flow";
 import { PAYOUT_PLANS, PERSONALIZED_PLAN } from "@/lib/business/payout-plans";
 import { allowedVerificationColors } from "@/lib/business/verification";
 
@@ -24,6 +26,7 @@ export default function LeadDetailPage() {
   const { data: timelineData } = useLeadTimeline(id);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
 
   if (isLoading || !data) {
     return (
@@ -35,6 +38,9 @@ export default function LeadDetailPage() {
   }
 
   const lead = data.lead;
+  const people = data.people;
+  // Closed leads can't be reassigned: their payout (if any) is already settled.
+  const canReassign = user && canReassignLead(user.role) && !isTerminalStatus(lead.status);
   // Closed (DISBURSED/REJECTED) leads have no verification changes left.
   const canVerify =
     user && canSetVerificationStatus(user.role) && allowedVerificationColors(lead.status).length > 0;
@@ -49,6 +55,11 @@ export default function LeadDetailPage() {
             {canVerify && (
               <Button variant="secondary" onClick={() => setVerifyOpen(true)}>
                 Set verification
+              </Button>
+            )}
+            {canReassign && (
+              <Button variant="secondary" onClick={() => setReassignOpen(true)}>
+                Reassign
               </Button>
             )}
             {canProgress && <Button onClick={() => setStatusOpen(true)}>Update status</Button>}
@@ -77,6 +88,11 @@ export default function LeadDetailPage() {
                     : PAYOUT_PLANS[lead.selectedPlan].label
                 }
               /> : null}
+              <Row label="Created by" value={people.createdByName ?? "—"} />
+              <Row
+                label="Assigned to"
+                value={lead.assignedTo === user?.id ? "You" : (people.assignedToName ?? "—")}
+              />
               <Row label="Created" value={format(new Date(lead.createdAt), "d MMM yyyy, h:mm a")} />
             </dl>
 
@@ -108,6 +124,14 @@ export default function LeadDetailPage() {
           leadStatus={lead.status}
           open={verifyOpen}
           onClose={() => setVerifyOpen(false)}
+        />
+      )}
+      {canReassign && (
+        <ReassignLeadModal
+          lead={lead}
+          assignedToName={people.assignedToName}
+          open={reassignOpen}
+          onClose={() => setReassignOpen(false)}
         />
       )}
       {canProgress && (

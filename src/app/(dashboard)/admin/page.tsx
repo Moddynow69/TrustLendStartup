@@ -9,6 +9,7 @@ import { VerificationBadge } from "@/components/leads/verification-badge";
 import { LeadStatusBadge } from "@/components/leads/status-badge";
 import { LeadFilterBar } from "@/components/leads/lead-filter-bar";
 import { useLeads } from "@/hooks/use-leads";
+import { useUsers } from "@/hooks/use-users";
 import type { Lead } from "@/types";
 
 const ALL_STATUSES = [
@@ -32,13 +33,15 @@ export default function AdminPage() {
   const [status, setStatus] = useState("");
 
   const { data, isLoading } = useLeads({ search, verificationStatus, caseType, status, limit: 50 });
+  const { data: usersData } = useUsers();
+  const nameById = new Map((usersData?.users ?? []).map((u) => [u.id, u.name]));
 
   const columns: Column<Lead>[] = [
     { header: "Customer", accessor: (l) => <span className="font-medium text-ink-900">{l.customerName}</span> },
     { header: "Case type", accessor: (l) => l.caseType },
     { header: "Verification", accessor: (l) => <VerificationBadge status={l.verificationStatus} /> },
     { header: "Status", accessor: (l) => <LeadStatusBadge status={l.status} /> },
-    { header: "Assigned to", accessor: (l) => <span className="font-mono text-xs">{l.assignedTo.slice(0, 8)}…</span> },
+    { header: "Assigned to", accessor: (l) => nameById.get(l.assignedTo) ?? "—" },
     { header: "Amount", accessor: (l) => `₹${l.amount.toLocaleString("en-IN")}` },
     { header: "Created", accessor: (l) => format(new Date(l.createdAt), "d MMM yyyy") },
   ];

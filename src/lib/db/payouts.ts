@@ -1,6 +1,7 @@
 import "server-only";
 import { adminDb, COLLECTIONS, FieldValue } from "@/lib/firebase/admin";
 import type { Payout, PayoutLog, PayoutPlan, PayoutStatus, UserProfile } from "@/types";
+import { canViewAllPayouts } from "@/lib/business/permissions";
 import { NotFoundError, ConflictError, BadRequestError } from "@/lib/api-response";
 import { calculatePayout, resolveAdminShare } from "@/lib/business/payout-plans";
 import { isValidPayoutTransition, PAYOUT_STATUS_LABELS } from "@/lib/business/payout-status";
@@ -9,6 +10,9 @@ function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payo
   return {
     id,
     leadId: data.leadId,
+    // Payouts created before reassignment existed were always paid to the
+    // lead's creator, which is what their `createdBy` holds.
+    payeeId: data.payeeId ?? data.createdBy ?? null,
     // Absent on payouts created before commission-based payouts existed.
     commissionRate: typeof data.commissionRate === "number" ? data.commissionRate : null,
     commissionAmount: typeof data.commissionAmount === "number" ? data.commissionAmount : null,
@@ -21,12 +25,12 @@ function serializePayout(id: string, data: FirebaseFirestore.DocumentData): Payo
 
 /**
  * Reads (inside a transaction) the admin's share of the commission for a
- * lead's plan. PERSONALIZED resolves from the lead creator's current
- * profile, since an admin may have changed it after the lead was submitted.
+ * lead's plan. PERSONALIZED resolves from the payee's current profile (the
+ * lead's assignee), since an admin may have changed it after submission.
  */
 export async function readAdminShareInTransaction(
   tx: FirebaseFirestore.Transaction,
-  lead: { selectedPlan: PayoutPlan; createdBy: string }
+  lead: { selectedPlan: PayoutPlan; payeeId: string }
 ): Promise<number> {
   // Leads created before payout plans existed have no selectedPlan.
   if (!lead.selectedPlan) {
@@ -36,15 +40,15 @@ export async function readAdminShareInTransaction(
   }
   let personalizedRate: number | null = null;
   if (lead.selectedPlan === "PERSONALIZED") {
-    const creatorSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.createdBy));
-    personalizedRate = creatorSnap.exists
-      ? (creatorSnap.data()?.personalizedPayoutRate ?? null)
+    const payeeSnap = await tx.get(adminDb.collection(COLLECTIONS.users).doc(lead.payeeId));
+    personalizedRate = payeeSnap.exists
+      ? (payeeSnap.data()?.personalizedPayoutRate ?? null)
       : null;
   }
   const adminShare = resolveAdminShare(lead.selectedPlan, personalizedRate);
   if (adminShare == null) {
     throw new BadRequestError(
-      "This lead's PERSONALIZED plan has no payout rate configured for the creator. Ask an admin to set one before disbursing."
+      "This lead's PERSONALIZED plan has no payout rate configured for the person it's assigned to. Set one in User Management before disbursing."
     );
   }
   return adminShare;
@@ -63,7 +67,10 @@ export async function createPayoutInTransaction(
   tx: FirebaseFirestore.Transaction,
   input: {
     leadId: string;
+    /** The lead's creator, kept for history. */
     createdBy: string;
+    /** Who is paid: the lead's assignee at disbursal. */
+    payeeId: string;
     amount: number;
     commissionRate: number;
     adminShare: number;
@@ -86,9 +93,9 @@ export async function createPayoutInTransaction(
   const now = FieldValue.serverTimestamp();
   tx.set(ref, {
     leadId: input.leadId,
-    // Denormalized from the lead so DSA/PARTNER payout lists can filter on
-    // it directly instead of resolving their lead IDs first.
     createdBy: input.createdBy,
+    // DSA/PARTNER payout lists and access checks filter on this directly.
+    payeeId: input.payeeId,
     commissionRate: input.commissionRate,
     commissionAmount,
     payoutRate,
@@ -114,13 +121,15 @@ export async function createPayoutForLead(leadId: string, commissionRate: number
     if (lead.status !== "DISBURSED") {
       throw new BadRequestError("Payouts can only be created for DISBURSED leads");
     }
+    const payeeId = lead.assignedTo ?? lead.createdBy;
     const adminShare = await readAdminShareInTransaction(tx, {
       selectedPlan: lead.selectedPlan,
-      createdBy: lead.createdBy,
+      payeeId,
     });
     return createPayoutInTransaction(tx, {
       leadId,
       createdBy: lead.createdBy,
+      payeeId,
       amount: lead.amount,
       commissionRate,
       adminShare,
@@ -144,13 +153,13 @@ export interface PayoutFilters {
 }
 
 /**
- * DSA/PARTNER see only payouts tied to leads they created (via the
- * denormalized `createdBy`); ADMIN sees all.
+ * DSA/PARTNER see only payouts paid to them; ADMIN and OPERATIONS see all
+ * (OPERATIONS read-only).
  */
 export async function listPayouts(user: UserProfile, filters: PayoutFilters) {
   let query: FirebaseFirestore.Query = adminDb.collection(COLLECTIONS.payouts);
-  if (user.role === "DSA" || user.role === "PARTNER") {
-    query = query.where("createdBy", "==", user.id);
+  if (!canViewAllPayouts(user.role)) {
+    query = query.where("payeeId", "==", user.id);
   }
   if (filters.status) {
     query = query.where("status", "==", filters.status);

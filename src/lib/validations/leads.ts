@@ -10,7 +10,6 @@ export const createLeadSchema = z.object({
     .min(2, "Bank is required")
     .refine(isRegisteredLender, "Select a bank, NBFC or ARC from the list"),
   caseType: z.enum(["SECURED", "UNSECURED"]),
-  assignedTo: z.string().min(1, "Assigned user is required"),
   selectedPlan: z.enum(["50-50", "70-30", "90-10", "PERSONALIZED"], {
     required_error: "Select a payout rate plan",
   }),
@@ -42,6 +41,11 @@ export const leadStatusUpdateSchema = z
     message: "commissionRate is required when status is DISBURSED",
     path: ["commissionRate"],
   });
+
+export const reassignLeadSchema = z.object({
+  assignedTo: z.string().min(1, "Choose who to assign the lead to"),
+  note: z.string().optional(),
+});
 
 export const leadListQuerySchema = z.object({
   verificationStatus: z.enum(["RED", "YELLOW", "GREEN"]).optional(),

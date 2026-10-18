@@ -52,7 +52,6 @@ export function AddLeadModal({ open, onClose }: { open: boolean; onClose: () => 
         amount,
         bank: form.bank,
         caseType: form.caseType as "SECURED" | "UNSECURED",
-        assignedTo: user.id,
         selectedPlan,
       });
       toast.success("Lead created");
