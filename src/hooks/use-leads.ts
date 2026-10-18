@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type { Lead, LeadLog, PaginatedResult } from "@/types";
 import { DASHBOARD_STATS_KEY } from "@/hooks/use-dashboard";
@@ -28,6 +28,8 @@ function buildQuery(filters: LeadFiltersInput): string {
 export function useLeads(filters: LeadFiltersInput = {}) {
   return useQuery({
     queryKey: ["leads", filters],
+    // Keep the current rows on screen while a new search/filter/page loads.
+    placeholderData: keepPreviousData,
     queryFn: () => api.get<PaginatedResult<Lead>>(`/api/leads${buildQuery(filters)}`),
   });
 }

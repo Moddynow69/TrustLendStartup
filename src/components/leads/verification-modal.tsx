@@ -30,6 +30,14 @@ export function VerificationModal({
 }) {
   const [selected, setSelected] = useState<"RED" | "YELLOW" | "GREEN" | null>(null);
   const [note, setNote] = useState("");
+
+  // Clear the form whenever the window closes (Cancel, X, Escape, backdrop
+  // or after saving), so reopening it never shows abandoned input.
+  function close() {
+    setSelected(null);
+    setNote("");
+    onClose();
+  }
   const mutation = useSetVerificationStatus(leadId);
 
   const allowed = allowedVerificationColors(leadStatus);
@@ -43,16 +51,14 @@ export function VerificationModal({
     try {
       await mutation.mutateAsync({ verificationStatus: selected, note: note.trim() || undefined });
       toast.success(rejects ? "Lead rejected" : "Verification status updated");
-      setSelected(null);
-      setNote("");
-      onClose();
+      close();
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "Failed to update");
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Set verification status">
+    <Modal open={open} onClose={close} title="Set verification status">
       <div className="space-y-3">
         {options.map((opt) => (
           <button
@@ -89,7 +95,7 @@ export function VerificationModal({
       </div>
 
       <div className="mt-6 flex justify-end gap-3">
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={close}>
           Cancel
         </Button>
         <Button

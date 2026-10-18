@@ -9,6 +9,7 @@ import { VerificationBadge } from "@/components/leads/verification-badge";
 import { LeadStatusBadge } from "@/components/leads/status-badge";
 import { LeadFilterBar } from "@/components/leads/lead-filter-bar";
 import { useLeads } from "@/hooks/use-leads";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useUsers } from "@/hooks/use-users";
 import type { Lead } from "@/types";
 
@@ -32,7 +33,14 @@ export default function AdminPage() {
   const [caseType, setCaseType] = useState("");
   const [status, setStatus] = useState("");
 
-  const { data, isLoading } = useLeads({ search, verificationStatus, caseType, status, limit: 50 });
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const { data, isLoading } = useLeads({
+    search: debouncedSearch,
+    verificationStatus,
+    caseType,
+    status,
+    limit: 50,
+  });
   const { data: usersData } = useUsers();
   const nameById = new Map((usersData?.users ?? []).map((u) => [u.id, u.name]));
 

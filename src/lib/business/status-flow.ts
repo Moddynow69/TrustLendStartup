@@ -67,6 +67,23 @@ export function isValidTransition(
   return getNextValidStatuses(caseType, currentStatus).includes(nextStatus);
 }
 
+/**
+ * Index (in the case type's flow) of the furthest stage a lead reached,
+ * from the statuses in its timeline logs, or -1 if it never entered the
+ * flow. Entering the flow is logged as VERIFICATION_GREEN rather than as the
+ * first stage, so that counts as reaching stage 0. Used to show where a
+ * rejected lead got to.
+ */
+export function furthestStageReached(caseType: CaseType, logStatuses: string[]): number {
+  const flow = getFlow(caseType);
+  let reached = -1;
+  for (const status of logStatuses) {
+    reached = Math.max(reached, flow.indexOf(status as LeadStatus));
+  }
+  if (reached === -1 && logStatuses.includes("VERIFICATION_GREEN")) reached = 0;
+  return reached;
+}
+
 export function isTerminalStatus(status: LeadStatus): boolean {
   return status === "DISBURSED" || status === "REJECTED";
 }

@@ -121,10 +121,13 @@ export async function listLeads(user: UserProfile, filters: LeadFilters) {
     if (cursorSnap.exists) query = query.startAfter(cursorSnap);
   }
 
-  query = query.limit(filters.limit);
+  // Fetch one extra row: if it exists there's a next page, so the last page
+  // never ends with an empty "Next".
+  query = query.limit(filters.limit + 1);
   const snap = await query.get();
-  const items = snap.docs.map((d) => serializeLead(d.id, d.data()));
-  const nextCursor = snap.docs.length === filters.limit ? snap.docs[snap.docs.length - 1].id : null;
+  const pageDocs = snap.docs.slice(0, filters.limit);
+  const items = pageDocs.map((d) => serializeLead(d.id, d.data()));
+  const nextCursor = snap.docs.length > filters.limit ? pageDocs[pageDocs.length - 1].id : null;
 
   return { items, nextCursor };
 }

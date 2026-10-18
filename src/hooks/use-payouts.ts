@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import type { Payout, PayoutLog, PaginatedResult } from "@/types";
 import { DASHBOARD_STATS_KEY } from "@/hooks/use-dashboard";
@@ -12,6 +12,8 @@ export function usePayouts(filters: { status?: string; cursor?: string; limit?: 
 
   return useQuery({
     queryKey: ["payouts", filters],
+    // Keep the current rows on screen while a new search/filter/page loads.
+    placeholderData: keepPreviousData,
     queryFn: () => api.get<PaginatedResult<Payout>>(`/api/payouts${qs ? `?${qs}` : ""}`),
   });
 }

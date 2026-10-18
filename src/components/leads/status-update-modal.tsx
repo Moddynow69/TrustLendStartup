@@ -33,6 +33,15 @@ export function StatusUpdateModal({
   const [selected, setSelected] = useState<LeadStatus | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [commissionInput, setCommissionInput] = useState("");
+
+  // Clear the form whenever the window closes (Cancel, X, Escape, backdrop
+  // or after saving), so reopening it never shows abandoned input.
+  function close() {
+    setSelected(null);
+    setRejectionReason("");
+    setCommissionInput("");
+    onClose();
+  }
   const mutation = useUpdateLeadStatus(leadId);
 
   const isRejectSelected = selected === "REJECTED";
@@ -61,10 +70,7 @@ export function StatusUpdateModal({
         commissionRate: isDisburseSelected ? commissionPct : undefined,
       });
       toast.success(`Lead moved to ${STATUS_LABELS[selected] ?? selected}`);
-      setSelected(null);
-      setRejectionReason("");
-      setCommissionInput("");
-      onClose();
+      close();
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "Failed to update status");
     }
@@ -72,7 +78,7 @@ export function StatusUpdateModal({
 
   if (nextOptions.length === 0) {
     return (
-      <Modal open={open} onClose={onClose} title="Update status">
+      <Modal open={open} onClose={close} title="Update status">
         <p className="text-sm text-ink-500">
           This lead is at a terminal stage ({STATUS_LABELS[currentStatus] ?? currentStatus}) and cannot move further.
         </p>
@@ -81,7 +87,7 @@ export function StatusUpdateModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Update status">
+    <Modal open={open} onClose={close} title="Update status">
       <div className="space-y-3">
         <p className="text-xs uppercase tracking-wide text-ink-400">
           Current: {STATUS_LABELS[currentStatus] ?? currentStatus}
@@ -155,7 +161,7 @@ export function StatusUpdateModal({
       </div>
 
       <div className="mt-6 flex justify-end gap-3">
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={close}>
           Cancel
         </Button>
         <Button
