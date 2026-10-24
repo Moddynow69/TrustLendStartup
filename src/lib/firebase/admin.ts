@@ -79,6 +79,7 @@ export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
 export { FieldValue, Timestamp };
 
+
 // Firestore collection name constants to avoid magic strings across API routes.
 export const COLLECTIONS = {
   users: "users",

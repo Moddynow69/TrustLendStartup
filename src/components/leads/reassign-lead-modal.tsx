@@ -61,6 +61,7 @@ export function ReassignLeadModal({
         <p className="text-sm text-ink-600">
           Currently assigned to <span className="font-medium text-ink-900">{assignedToName ?? "—"}</span>. The new
           assignee sees this lead alongside its creator, and is paid if it&apos;s disbursed while assigned to them.
+          The current assignee loses access to the lead and its documents straight away, unless they created it.
         </p>
 
         <Select

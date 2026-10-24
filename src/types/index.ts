@@ -106,6 +106,77 @@ export interface DashboardStats {
   disbursed: number;
   rejected: number;
   pendingPayouts: number;
+  /** Leads with at least one open "new copy" document request. */
+  leadsNeedingNewCopy: number;
+}
+
+export type DocumentCategory =
+  | "PAN"
+  | "ADDRESS_PROOF"
+  | "BANK_STATEMENT"
+  | "INCOME_PROOF"
+  | "PROPERTY_PAPERS"
+  | "OTHER";
+
+export type DocumentContentType = "application/pdf" | "image/jpeg" | "image/png";
+
+/** The current file of a lead document (earlier versions are kept server-side). */
+export interface DocumentFile {
+  name: string;
+  contentType: DocumentContentType;
+  size: number;
+  uploadedBy: string;
+  uploadedByName: string;
+  uploadedAt: string;
+}
+
+/** A document slot on a lead: one per checklist category, any number of OTHER. */
+export interface LeadDocument {
+  id: string;
+  leadId: string;
+  category: DocumentCategory;
+  /** null until the first upload completes. */
+  file: DocumentFile | null;
+  /** 1 for the first upload, +1 for each replacement. */
+  version: number;
+  /** Open request (from Operations/Admin) to upload a better copy. */
+  newCopyRequest: { by: string; byName: string; at: string } | null;
+  commentCount: number;
+  createdAt: string;
+}
+
+export interface DocumentComment {
+  id: string;
+  /** null once deleted: the text is removed, the entry stays. */
+  body: string | null;
+  authorId: string;
+  authorName: string;
+  authorRole: Role | null;
+  requestsNewCopy: boolean;
+  /** System notes (new copy uploaded, request resolved, file deleted). */
+  system: boolean;
+  deletedByName: string | null;
+  createdAt: string;
+}
+
+export type DocumentActivityAction =
+  | "UPLOADED"
+  | "REPLACED"
+  | "VIEWED"
+  | "DELETED"
+  | "PURGED"
+  | "COPY_REQUESTED"
+  | "REQUEST_RESOLVED"
+  | "COMMENT_DELETED";
+
+export interface DocumentActivity {
+  id: string;
+  action: DocumentActivityAction;
+  documentId: string;
+  category: DocumentCategory;
+  userId: string;
+  userName: string;
+  at: string;
 }
 
 export interface PaginatedResult<T> {

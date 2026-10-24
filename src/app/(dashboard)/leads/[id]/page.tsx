@@ -12,6 +12,7 @@ import { LeadTimeline } from "@/components/leads/lead-timeline";
 import { VerificationModal } from "@/components/leads/verification-modal";
 import { StatusUpdateModal } from "@/components/leads/status-update-modal";
 import { ReassignLeadModal } from "@/components/leads/reassign-lead-modal";
+import { DocumentsCard } from "@/components/documents/documents-card";
 import { useLead, useLeadTimeline } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { canReassignLead, canSetVerificationStatus, canUpdateCaseStatus } from "@/lib/business/permissions";
@@ -105,7 +106,7 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
           <div className="rounded-xl border border-ink-100 bg-white p-6 shadow-card">
             <h3 className="mb-5 text-sm font-semibold uppercase tracking-wide text-ink-400">Timeline</h3>
             <LeadTimeline
@@ -115,6 +116,7 @@ export default function LeadDetailPage() {
               rejectionReason={lead.rejectionReason}
             />
           </div>
+          {user && <DocumentsCard lead={lead} user={user} />}
         </div>
       </div>
 
