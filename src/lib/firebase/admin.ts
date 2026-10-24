@@ -2,6 +2,7 @@ import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 function normalizePrivateKey(raw: string): string {
   let key = raw.trim();
@@ -78,6 +79,23 @@ const adminApp = buildAdminApp();
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
 export { FieldValue, Timestamp };
+
+/**
+ * The private bucket holding lead documents. Resolved on first use, so the
+ * rest of the app keeps working before Storage is set up. Prefers the
+ * server-only FIREBASE_STORAGE_BUCKET; falls back to the older public name.
+ */
+export function documentsBucket() {
+  const name = (
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    ""
+  ).trim();
+  if (!name) {
+    throw new Error("Missing FIREBASE_STORAGE_BUCKET. Set it to your Firebase Storage bucket name.");
+  }
+  return getStorage(adminApp).bucket(name);
+}
 
 // Firestore collection name constants to avoid magic strings across API routes.
 export const COLLECTIONS = {

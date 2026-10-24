@@ -22,7 +22,7 @@ export async function getDashboardStats(user: UserProfile): Promise<DashboardSta
   };
   const count = async (q: FirebaseFirestore.Query) => (await q.count().get()).data().count;
 
-  const [totalLeads, red, yellow, green, disbursed, rejected, pendingPayouts] = await Promise.all([
+  const [totalLeads, red, yellow, green, disbursed, rejected, pendingPayouts, leadsNeedingNewCopy] = await Promise.all([
     count(leads()),
     count(leads().where("verificationStatus", "==", "RED")),
     count(leads().where("verificationStatus", "==", "YELLOW")),
@@ -30,7 +30,9 @@ export async function getDashboardStats(user: UserProfile): Promise<DashboardSta
     count(leads().where("status", "==", "DISBURSED")),
     count(leads().where("status", "==", "REJECTED")),
     count(payouts().where("status", "==", "PENDING")),
+    // Maintained by the documents module as requests open and close.
+    count(leads().where("openDocumentRequests", ">", 0)),
   ]);
 
-  return { totalLeads, red, yellow, green, disbursed, rejected, pendingPayouts };
+  return { totalLeads, red, yellow, green, disbursed, rejected, pendingPayouts, leadsNeedingNewCopy };
 }
