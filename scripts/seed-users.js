@@ -10,11 +10,16 @@
  * make sure FIREBASE_ADMIN_PROJECT_ID / FIREBASE_ADMIN_CLIENT_EMAIL /
  * FIREBASE_ADMIN_PRIVATE_KEY are already set there before running this.
  *
- * Safe to re-run: if a username already exists, its password/profile are
- * updated in place instead of failing on a duplicate.
+ * Each new account gets a random password, printed once at the end: save
+ * it, then change it after first login. Nothing is hard-coded, because this
+ * repository is public.
+ *
+ * Safe to re-run: accounts that already exist are left exactly as they are
+ * (password, role and profile untouched).
  */
 
 const path = require("path");
+const crypto = require("crypto");
 const admin = require("firebase-admin");
 const dotenv = require("dotenv");
 
@@ -83,28 +88,40 @@ const db = admin.firestore();
 
 // --- accounts to seed ---
 const ACCOUNTS = [
-  { name: "Admin", username: "admin", password: "ADMINLOCK", role: "ADMIN" },
-  { name: "DSA", username: "dsa", password: "JustDoIt", role: "DSA" },
+  { name: "Admin", username: "admin", role: "ADMIN" },
+  { name: "DSA", username: "dsa", role: "DSA" },
 ];
 
-async function upsertAccount({ name, username, password, role }) {
+/** 16 characters with letters and digits, so it meets the app's password rule. */
+function randomPassword() {
+  const letters = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  const all = letters + digits;
+  const pick = (set) => set[crypto.randomInt(set.length)];
+  const chars = [pick(letters), pick(digits)];
+  while (chars.length < 16) chars.push(pick(all));
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+/** Returns the new password, or null if the account already existed. */
+async function createAccountIfMissing({ name, username, role }) {
   const email = usernameToSyntheticEmail(username);
 
-  let userRecord;
   try {
-    userRecord = await auth.getUserByEmail(email);
-    await auth.updateUser(userRecord.uid, { password, displayName: name, disabled: false });
-    console.log(`Updated existing auth user for "${username}" (${email})`);
+    await auth.getUserByEmail(email);
+    console.log(`"${username}" already exists, left unchanged.`);
+    return null;
   } catch (err) {
     if (err.code !== "auth/user-not-found") throw err;
-    userRecord = await auth.createUser({
-      email,
-      password,
-      displayName: name,
-      disabled: false,
-    });
-    console.log(`Created auth user for "${username}" (${email})`);
   }
+
+  const password = randomPassword();
+  const userRecord = await auth.createUser({ email, password, displayName: name, disabled: false });
+  console.log(`Created auth user for "${username}" (${email})`);
 
   await db.collection("users").doc(userRecord.uid).set(
     {
@@ -119,15 +136,20 @@ async function upsertAccount({ name, username, password, role }) {
     { merge: true }
   );
   console.log(`Wrote Firestore profile for "${username}" with role ${role}\n`);
+  return password;
 }
 
 (async () => {
+  const created = [];
   for (const account of ACCOUNTS) {
-    await upsertAccount(account);
+    const password = await createAccountIfMissing(account);
+    if (password) created.push({ ...account, password });
   }
-  console.log("Done. You can now log in with:");
-  for (const a of ACCOUNTS) {
-    console.log(`  - ${a.username} / ${a.password} (${a.role})`);
+  if (created.length === 0) {
+    console.log("Done. No new accounts were needed.");
+  } else {
+    console.log("Done. New accounts (this is the only time these passwords are shown; change them after first login):");
+    for (const a of created) console.log(`  - ${a.username} / ${a.password} (${a.role})`);
   }
   process.exit(0);
 })().catch((err) => {

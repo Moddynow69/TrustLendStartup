@@ -1,6 +1,6 @@
 import "server-only";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { BadRequestError } from "@/lib/api-response";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /*
  * Private file storage for lead documents, on Supabase Storage (free plan).
@@ -13,21 +13,15 @@ import { BadRequestError } from "@/lib/api-response";
  * provider later means replacing these functions only.
  */
 
-let client: SupabaseClient | null = null;
-
 function storage() {
-  if (!client) {
-    const url = process.env.SUPABASE_URL?.trim();
-    const key = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)?.trim();
-    if (!url || !key) {
-      // Shown to the user: the rest of the app works, only file storage is missing.
-      throw new BadRequestError(
-        "Document storage isn't set up yet. An admin needs to finish the setup (README: Setting up document storage)."
-      );
-    }
-    client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    // Shown to the user: the rest of the app works, only file storage is missing.
+    throw new BadRequestError(
+      "Document storage isn't set up yet. An admin needs to finish the setup (README: Setting up document storage)."
+    );
   }
-  return client.storage.from(bucketName());
+  return supabase.storage.from(bucketName());
 }
 
 /** Throws the user-facing "not set up" error before any record is written. */
