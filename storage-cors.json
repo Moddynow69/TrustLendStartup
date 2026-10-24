@@ -1,8 +1,0 @@
-[
-  {
-    "origin": ["https://YOUR-APP-DOMAIN", "http://localhost:3000"],
-    "method": ["PUT", "GET"],
-    "responseHeader": ["Content-Type", "x-goog-content-length-range"],
-    "maxAgeSeconds": 3600
-  }
-]

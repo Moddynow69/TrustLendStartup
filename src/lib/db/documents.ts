@@ -1,5 +1,13 @@
 import "server-only";
-import { adminDb, COLLECTIONS, FieldValue, Timestamp, documentsBucket } from "@/lib/firebase/admin";
+import { adminDb, COLLECTIONS, FieldValue, Timestamp } from "@/lib/firebase/admin";
+import {
+  assertStorageConfigured,
+  createUploadLink,
+  createViewLink,
+  deleteStoredFiles,
+  getStoredFileInfo,
+  readFileStart,
+} from "@/lib/storage/documents-storage";
 import { AuthError } from "@/lib/auth/session";
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/api-response";
 import { canViewLead } from "@/lib/business/permissions";
@@ -38,10 +46,10 @@ import type {
  *       file, versions[], pendingUpload, version, newCopyRequest, commentCount
  *       comments/{commentId}
  *     documentActivity/{id}                 uploads, views, deletions, requests
- * Storage: leads/{leadId}/{docId}/{timestamp}-{safe file name}, one object per version.
+ * Storage (Supabase, private bucket): leads/{leadId}/{docId}/{timestamp}-{safe file name},
+ * one object per version.
  */
 
-const UPLOAD_LINK_MINUTES = 10;
 const VIEW_LINK_MINUTES = 5;
 
 type Status = "PENDING" | "UPLOADED" | "EMPTY" | "DELETED" | "PURGED";
@@ -191,6 +199,7 @@ export async function startUpload(
   }
   const problem = validateDocumentFile(input.contentType, input.size);
   if (problem) throw new BadRequestError(problem);
+  assertStorageConfigured();
 
   const active = await docsCol(lead.id).where("status", "in", ["UPLOADED", "PENDING"]).count().get();
   if (!input.documentId && active.data().count >= MAX_DOCUMENTS_PER_LEAD) {
@@ -248,23 +257,9 @@ export async function startUpload(
     }
   });
 
-  const lengthRange = `0,${MAX_DOCUMENT_BYTES}`;
-  const [uploadUrl] = await documentsBucket()
-    .file(storagePath)
-    .getSignedUrl({
-      version: "v4",
-      action: "write",
-      expires: Date.now() + UPLOAD_LINK_MINUTES * 60 * 1000,
-      contentType: input.contentType,
-      // Storage itself rejects anything over the limit.
-      extensionHeaders: { "x-goog-content-length-range": lengthRange },
-    });
-
-  return {
-    documentId: ref.id,
-    uploadUrl,
-    uploadHeaders: { "Content-Type": input.contentType, "x-goog-content-length-range": lengthRange },
-  };
+  // The bucket itself rejects files over 10 MB or of other types.
+  const uploadUrl = await createUploadLink(storagePath);
+  return { documentId: ref.id, uploadUrl };
 }
 
 /** True if the first bytes are really a PDF, JPEG or PNG of the declared type. */
@@ -281,28 +276,20 @@ export async function completeUpload(lead: Lead, user: UserProfile, documentId: 
   if (!before.exists || !pending) throw new NotFoundError("No upload is waiting to be confirmed for this document.");
   if (pending.by !== user.id) throw new AuthError("Only the person who started this upload can finish it.", 403);
 
-  const object = documentsBucket().file(pending.storagePath);
+  const info = await getStoredFileInfo(pending.storagePath);
+  if (!info) throw new BadRequestError("The file didn't reach storage. Try uploading again.");
+
   let reason: string | null = null;
-  try {
-    const [meta] = await object.getMetadata();
-    const size = Number(meta.size);
-    if (size !== pending.size || size > MAX_DOCUMENT_BYTES) reason = "The uploaded file's size doesn't match. Try again.";
-    else if (meta.contentType !== pending.contentType) reason = "The uploaded file's type doesn't match. Try again.";
-    else {
-      const [head] = await object.download({ start: 0, end: 7 });
-      if (!matchesSignature(pending.contentType, head)) {
-        reason = `This file isn't a real ${pending.contentType === "application/pdf" ? "PDF" : "image"}. Upload the original document.`;
-      }
-    }
-  } catch (err) {
-    if ((err as { code?: number }).code === 404) {
-      throw new BadRequestError("The file didn't reach storage. Try uploading again.");
-    }
-    throw err;
+  if (info.size !== pending.size || info.size > MAX_DOCUMENT_BYTES) {
+    reason = "The uploaded file's size doesn't match. Try again.";
+  } else if (info.contentType.split(";")[0].trim() !== pending.contentType) {
+    reason = "The uploaded file's type doesn't match. Try again.";
+  } else if (!matchesSignature(pending.contentType, await readFileStart(pending.storagePath))) {
+    reason = `This file isn't a real ${pending.contentType === "application/pdf" ? "PDF" : "image"}. Upload the original document.`;
   }
 
   if (reason) {
-    await object.delete({ ignoreNotFound: true });
+    await deleteStoredFiles([pending.storagePath]);
     await ref.update({ pendingUpload: null });
     throw new BadRequestError(reason);
   }
@@ -360,15 +347,7 @@ export async function getViewUrl(lead: Lead, user: UserProfile, documentId: stri
   if (!snap.exists || d?.status !== "UPLOADED" || !d.file) throw new NotFoundError("Document not found");
   const f = d.file as StoredFile;
 
-  const [url] = await documentsBucket()
-    .file(f.storagePath)
-    .getSignedUrl({
-      version: "v4",
-      action: "read",
-      expires: Date.now() + VIEW_LINK_MINUTES * 60 * 1000,
-      responseType: f.contentType,
-      responseDisposition: `inline; filename="${sanitizeFileName(f.name)}"`,
-    });
+  const url = await createViewLink(f.storagePath, VIEW_LINK_MINUTES * 60);
 
   await activityCol(lead.id).add(activityEntry("VIEWED", snap.id, d.category, user));
   return { url, expiresInSeconds: VIEW_LINK_MINUTES * 60, contentType: f.contentType, name: f.name };
@@ -416,8 +395,7 @@ export async function purgeDocument(lead: Lead, user: UserProfile, documentId: s
   if (d!.file?.storagePath) paths.add(d!.file.storagePath);
   if (d!.pendingUpload?.storagePath) paths.add(d!.pendingUpload.storagePath);
   for (const v of d!.versions ?? []) if (v?.storagePath) paths.add(v.storagePath);
-  const bucket = documentsBucket();
-  await Promise.all([...paths].map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
+  await deleteStoredFiles([...paths]);
 
   const comments = await ref.collection("comments").get();
   const batch = adminDb.batch();

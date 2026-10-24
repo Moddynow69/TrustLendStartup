@@ -93,27 +93,27 @@ Every subsequent API request is authenticated by verifying that session cookie s
 
 ## Lead documents and comments
 
-Customer documents (PAN, address proof, bank statements, income proof, property papers, other) attach to each lead and live in a **private Firebase Storage bucket**. Browsers never access the bucket directly (`storage.rules` deny everything); the server hands out short-lived signed links after checking access.
+Customer documents (PAN, address proof, bank statements, income proof, property papers, other) attach to each lead and live in a **private Supabase Storage bucket** (free plan). Only the server talks to Supabase, using the secret key; browsers only ever receive short-lived signed links, issued after the server checks lead access.
 
-- **Upload:** `POST /api/leads/{id}/documents` checks access, type (PDF/JPG/PNG) and size (10 MB), then returns a 10-minute upload link (Storage itself enforces the size). The browser uploads straight to Storage, so files never pass through the server. `POST …/{docId}/complete` then checks the stored file's size, type and first bytes before saving it.
+- **Upload:** `POST /api/leads/{id}/documents` checks access, type (PDF/JPG/PNG) and size (10 MB) and returns a one-time upload link; the browser uploads straight to Supabase, so files never pass through the server. The bucket itself also enforces the size limit and file types. `POST …/{docId}/complete` then checks the stored file's size, type and first bytes before saving it. Large phone photos are shrunk in the browser first (longer side 2000 px, JPEG) so the free storage lasts longer.
 - **View:** `GET …/{docId}/url` re-checks access, logs the view and returns a 5-minute read link.
 - **Who:** anyone who can see the lead (creator or assignee DSA/Partner, Operations, Admin) can view, upload and comment while it's open. DSA/Partner can delete their own uploads until the lead is Green; Admins can delete any; disbursed/rejected leads are read-only. Rules: `lib/business/documents.ts` (unit-tested).
 - **Comments:** each document has a thread (`…/{docId}/comments`). Operations/Admin can tick "Ask for a new copy"; a replacement upload (or "Mark resolved") clears it. Open requests are counted on the lead (`openDocumentRequests`) for the dashboard.
 - **Deleting:** soft by default (the file stays for the audit trail). Admins can delete permanently (`?permanent=true`) for erasure requests: every version and the comment text are removed.
-- **Data layout:** `leads/{id}/documents/{docId}` (docId = category for checklist slots), with `comments` beneath, and `leads/{id}/documentActivity` for uploads, views and deletions.
+- **Data layout:** file records in Firestore at `leads/{id}/documents/{docId}` (docId = category for checklist slots), with `comments` beneath and `leads/{id}/documentActivity` for uploads, views and deletions. Files in Supabase at `leads/{leadId}/{docId}/{timestamp}-{name}`. All Supabase-specific code is in `lib/storage/documents-storage.ts`.
 
-### Setting up Storage (one-time)
+### Setting up document storage (one-time, free)
 
-1. Upgrade the Firebase project to the **Blaze** plan (required for new Storage buckets).
-2. Firebase Console → Storage → Get started, location **`asia-south1` (Mumbai)**. The region can't be changed later.
-3. Set `FIREBASE_STORAGE_BUCKET` (e.g. `your-project.firebasestorage.app`) in `.env.local` and your hosting provider.
-4. Put your app's address in `storage-cors.json`, then allow browser uploads: `gcloud storage buckets update gs://YOUR-BUCKET --cors-file=storage-cors.json`
-5. Deploy the lockdown rules: `firebase deploy --only storage`
-6. Recommended: a Google Cloud budget alert, and a retention decision (how long documents are kept after a lead closes).
+1. Create a free project at [supabase.com](https://supabase.com) (no card needed), region **South Asia (Mumbai)**.
+2. Supabase → Project Settings → API: copy the project URL and the **secret key** (`service_role` on older projects) into `.env.local` and your hosting provider as `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. Never put the secret key in browser code or Git.
+3. Create the private bucket with its limits: `npm run setup:documents-storage`
+4. No CORS setup is needed; Supabase accepts uploads from any site with a valid signed link.
+
+**Free plan limits:** about 1 GB of files and 5 GB of downloads a month (check supabase.com/pricing). When storage is full, uploads are refused with a clear message. Free projects **pause after a week with no activity**; restore them from the Supabase dashboard.
 
 ## Known MVP simplifications (documented, not hidden)
 
-- Lead documents: abandoned uploads (started but never completed) and documents past their retention period are not yet cleaned up automatically; there's no malware scanning and no notifications for new-copy requests yet.
+- Lead documents: abandoned uploads (started but never completed) and documents past their retention period are not yet cleaned up automatically; there's no malware scanning and no notifications for new-copy requests yet. Supabase's signed upload links stay valid for 2 hours (not configurable); the server still verifies every file before accepting it.
 
 - The login rate limiter (`lib/auth/rate-limit.ts`) is in-memory, which is fine for a single Vercel instance but won't share state across concurrently-scaled serverless functions — swap in Upstash/Redis before you need real brute-force protection at scale.
 - `search` on the leads list does a Firestore prefix match on `customerName`; there's no full-text search. Pair with Algolia/Typesense if you need fuzzy search.

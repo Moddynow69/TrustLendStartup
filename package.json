@@ -11,9 +11,11 @@
     "test": "vitest run",
     "seed:users": "node scripts/seed-users.js",
     "backfill:payouts": "node scripts/backfill-payout-created-by.js",
-    "backfill:lead-plans": "node scripts/backfill-lead-plans.js"
+    "backfill:lead-plans": "node scripts/backfill-lead-plans.js",
+    "setup:documents-storage": "node scripts/setup-supabase-storage.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
     "@tanstack/react-query": "5.51.1",
     "clsx": "2.1.1",
     "date-fns": "3.6.0",

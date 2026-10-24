@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useUploadDocument } from "@/hooks/use-documents";
 import { ApiClientError } from "@/lib/api-client";
 import { DOCUMENT_CATEGORIES, formatFileSize, validateDocumentFile } from "@/lib/business/documents";
+import { shrinkImage } from "@/lib/client/shrink-image";
 import type { DocumentCategory, LeadDocument } from "@/types";
 
 /**
@@ -37,6 +38,8 @@ export function UploadDocumentModal({
     replacing?.category ?? initialCategory ?? categories[0] ?? ""
   );
   const [file, setFile] = useState<File | null>(null);
+  const [originalSize, setOriginalSize] = useState<number | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -47,21 +50,34 @@ export function UploadDocumentModal({
   function close() {
     if (upload.isPending) return;
     setFile(null);
+    setOriginalSize(null);
     setError(null);
     setProgress(null);
     onClose();
   }
 
-  function pick(f: File | undefined) {
+  async function pick(picked: File | undefined) {
     setError(null);
-    if (!f) return;
+    setFile(null);
+    setOriginalSize(null);
+    if (!picked) return;
+    // Check the type first, then shrink large photos (which can also bring a
+    // 12 MB photo under the 10 MB limit) before checking the size.
+    const typeProblem = validateDocumentFile(picked.type, 1);
+    if (typeProblem) {
+      setError(`“${picked.name}”: ${typeProblem}`);
+      return;
+    }
+    setPreparing(true);
+    const f = await shrinkImage(picked);
+    setPreparing(false);
     const problem = validateDocumentFile(f.type, f.size);
     if (problem) {
-      setFile(null);
-      setError(`“${f.name}”: ${problem}`);
+      setError(`“${picked.name}”: ${problem}`);
       return;
     }
     setFile(f);
+    if (f !== picked) setOriginalSize(picked.size);
   }
 
   async function handleUpload() {
@@ -139,9 +155,13 @@ export function UploadDocumentModal({
 
         {hint && <p className="text-xs text-ink-500">{hint}</p>}
 
+        {preparing && <p className="text-sm text-ink-500">Preparing photo…</p>}
         {file && (
           <p className="break-all text-sm text-ink-700">
             {file.name} · {formatFileSize(file.size)}
+            {originalSize && (
+              <span className="text-ink-400"> (reduced from {formatFileSize(originalSize)} to save storage)</span>
+            )}
           </p>
         )}
 
@@ -158,7 +178,7 @@ export function UploadDocumentModal({
         <Button variant="secondary" onClick={close} disabled={upload.isPending}>
           Cancel
         </Button>
-        <Button onClick={handleUpload} loading={upload.isPending} disabled={!file || !activeCategory}>
+        <Button onClick={handleUpload} loading={upload.isPending} disabled={!file || !activeCategory || preparing}>
           Upload
         </Button>
       </div>
