@@ -43,7 +43,9 @@ import type {
  *     openDocumentRequests: number          open "new copy" requests, for the dashboard
  *     documents/{docId}                     docId = category for checklist slots, random for OTHER
  *       status: PENDING | UPLOADED | EMPTY | DELETED | PURGED
- *       file, versions[], pendingUpload, version, newCopyRequest, commentCount
+ *       file, versions[], oldVersionCount, pendingUpload, version, newCopyRequest, commentCount
+ *       (oldVersionCount mirrors versions.length so the daily clean-up can
+ *       find documents with old files without reading every document)
  *       comments/{commentId}
  *     documentActivity/{id}                 uploads, views, deletions, requests
  * Storage (Supabase, private bucket): leads/{leadId}/{docId}/{timestamp}-{safe file name},
@@ -248,6 +250,7 @@ export async function startUpload(
         status: "PENDING",
         file: null,
         versions: [],
+        oldVersionCount: 0,
         pendingUpload,
         version: 0,
         newCopyRequest: null,
@@ -319,7 +322,12 @@ export async function completeUpload(lead: Lead, user: UserProfile, documentId: 
       version: (d.version ?? 0) + 1,
       newCopyRequest: null,
       // Earlier files stay in Storage for the audit trail until purged.
-      ...(replacing ? { versions: FieldValue.arrayUnion({ ...d.file, replacedAt: Timestamp.now() }) } : {}),
+      ...(replacing
+        ? {
+            versions: FieldValue.arrayUnion({ ...d.file, replacedAt: Timestamp.now() }),
+            oldVersionCount: FieldValue.increment(1),
+          }
+        : {}),
     });
     if (openRequest) tx.update(leadRef(lead.id), { openDocumentRequests: FieldValue.increment(-1) });
     if (replacing || openRequest) {
@@ -372,6 +380,7 @@ export async function deleteDocument(lead: Lead, user: UserProfile, documentId: 
       file: null,
       newCopyRequest: null,
       versions: FieldValue.arrayUnion({ ...d.file, deletedAt: Timestamp.now(), deletedBy: user.id }),
+      oldVersionCount: FieldValue.increment(1),
     });
     if (d.newCopyRequest) tx.update(leadRef(lead.id), { openDocumentRequests: FieldValue.increment(-1) });
     tx.set(snap.ref.collection("comments").doc(), systemComment(`${user.name} deleted ${d.file.name}.`));
@@ -403,6 +412,7 @@ export async function purgeDocument(lead: Lead, user: UserProfile, documentId: s
     status: "PURGED",
     file: null,
     versions: [],
+    oldVersionCount: 0,
     pendingUpload: null,
     newCopyRequest: null,
     commentCount: 0,

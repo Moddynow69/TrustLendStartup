@@ -33,6 +33,7 @@ const ACTIVITY_TEXT: Record<DocumentActivity["action"], string> = {
   COPY_REQUESTED: "asked for a new copy of",
   REQUEST_RESOLVED: "resolved the new-copy request on",
   COMMENT_DELETED: "deleted a comment on",
+  OLD_VERSIONS_REMOVED: "removed old versions (over 30 days) of",
 };
 
 type Row = { category: DocumentCategory; doc: LeadDocument | null; required: boolean };

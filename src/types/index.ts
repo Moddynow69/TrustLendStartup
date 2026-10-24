@@ -167,7 +167,9 @@ export type DocumentActivityAction =
   | "PURGED"
   | "COPY_REQUESTED"
   | "REQUEST_RESOLVED"
-  | "COMMENT_DELETED";
+  | "COMMENT_DELETED"
+  /** Daily clean-up removed replaced/deleted files past their 30 days. */
+  | "OLD_VERSIONS_REMOVED";
 
 export interface DocumentActivity {
   id: string;

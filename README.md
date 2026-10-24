@@ -111,9 +111,25 @@ Customer documents (PAN, address proof, bank statements, income proof, property 
 
 **Free plan limits:** about 1 GB of files and 5 GB of downloads a month (check supabase.com/pricing). When storage is full, uploads are refused with a clear message. Free projects **pause after a week with no activity**; restore them from the Supabase dashboard.
 
+### Daily document clean-up
+
+`GET /api/cron/document-cleanup` runs once a day (scheduled in `vercel.json`, 03:00 IST) and:
+
+- **Abandoned uploads:** clears uploads started more than 24 hours ago that were never confirmed, deletes their stray file, and removes a document slot that never got a file (unless it has comments).
+- **Old versions:** deletes replaced or deleted files after **30 days** (`lib/business/document-retention.ts`). The history entry about the replacement or deletion stays, plus an "Automatic clean-up removed old versions" entry.
+- **Closed leads:** documents on disbursed or rejected leads are **not** removed automatically yet; no retention period has been chosen.
+
+Setup on Vercel: add a long random `CRON_SECRET` to the project's environment variables; Vercel Cron sends it with each run and the route refuses requests without it. To see what a run would do without changing anything:
+
+```
+curl -H "Authorization: Bearer $CRON_SECRET" "https://YOUR-APP/api/cron/document-cleanup?dryRun=1"
+```
+
+Each run handles up to 200 documents per part; anything beyond that is picked up the next day.
+
 ## Known MVP simplifications (documented, not hidden)
 
-- Lead documents: abandoned uploads (started but never completed) and documents past their retention period are not yet cleaned up automatically; there's no malware scanning and no notifications for new-copy requests yet. Supabase's signed upload links stay valid for 2 hours (not configurable); the server still verifies every file before accepting it.
+- Lead documents: documents on closed leads are kept until a retention period is chosen (the daily clean-up only handles abandoned uploads and old versions); there's no malware scanning and no notifications for new-copy requests yet. Supabase's signed upload links stay valid for 2 hours (not configurable); the server still verifies every file before accepting it.
 
 - The login rate limiter (`lib/auth/rate-limit.ts`) is in-memory, which is fine for a single Vercel instance but won't share state across concurrently-scaled serverless functions — swap in Upstash/Redis before you need real brute-force protection at scale.
 - `search` on the leads list does a Firestore prefix match on `customerName`; there's no full-text search. Pair with Algolia/Typesense if you need fuzzy search.
